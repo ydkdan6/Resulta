@@ -10,3 +10,323 @@ datasource db {
   url       = env("DATABASE_URL")
   directUrl = env("DIRECT_URL")
 }
+
+enum Role {
+  platform_admin
+  school_admin
+  teacher
+}
+
+enum StudentStatus {
+  ACTIVE
+  INACTIVE
+  TRANSFERRED
+  GRADUATED
+}
+
+enum TermStatus {
+  DRAFT
+  PUBLISHED
+}
+
+enum ResultStatus {
+  DRAFT
+  SUBMITTED
+}
+
+enum PaymentStatus {
+  PENDING
+  CONFIRMED
+  REJECTED
+}
+
+enum PinStatus {
+  ACTIVE
+  EXPIRED
+  REVOKED
+}
+
+enum ComplaintStatus {
+  PENDING
+  RESOLVED
+  DISMISSED
+}
+
+model School {
+  id             String   @id @default(uuid())
+  name           String
+  slug           String   @unique
+  logo_url       String?
+  card_price     Decimal  @default(2000.00) @db.Decimal(10, 2)
+  platform_share Decimal  @default(1000.00) @db.Decimal(10, 2)
+  created_at     DateTime @default(now())
+  updated_at     DateTime @updatedAt
+
+  users               User[]
+  classes             Class[]
+  subjects            Subject[]
+  teacherAssignments TeacherAssignment[]
+  students            Student[]
+  terms               Term[]
+  results             Result[]
+  studentTermStatuses StudentTermStatus[]
+  paymentBatches      PaymentBatch[]
+  pins                Pin[]
+  auditLogs           AuditLog[]
+  complaints          Complaint[]
+
+  @@index([slug])
+}
+
+model User {
+  id            String   @id @default(uuid())
+  email         String   @unique
+  name          String
+  password_hash String
+  role          Role
+  school_id     String?
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
+
+  school             School?             @relation(fields: [school_id], references: [id], onDelete: Cascade)
+  teacherAssignments TeacherAssignment[]
+  confirmedBatches   PaymentBatch[]      @relation("BatchConfirmer")
+  auditLogs          AuditLog[]
+
+  @@index([school_id])
+  @@index([email])
+}
+
+model Class {
+  id         String   @id @default(uuid())
+  school_id  String
+  name       String
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  school             School              @relation(fields: [school_id], references: [id], onDelete: Cascade)
+  students           Student[]
+  teacherAssignments TeacherAssignment[]
+
+  @@unique([school_id, name])
+  @@index([school_id])
+}
+
+model Subject {
+  id         String   @id @default(uuid())
+  school_id  String
+  name       String
+  code       String?
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  school             School              @relation(fields: [school_id], references: [id], onDelete: Cascade)
+  teacherAssignments TeacherAssignment[]
+  results            Result[]
+
+  @@unique([school_id, name])
+  @@index([school_id])
+}
+
+model TeacherAssignment {
+  id         String   @id @default(uuid())
+  school_id  String
+  teacher_id String
+  class_id   String
+  subject_id String
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  school  School  @relation(fields: [school_id], references: [id], onDelete: Cascade)
+  teacher User    @relation(fields: [teacher_id], references: [id], onDelete: Cascade)
+  class   Class   @relation(fields: [class_id], references: [id], onDelete: Cascade)
+  subject Subject @relation(fields: [subject_id], references: [id], onDelete: Cascade)
+
+  @@unique([school_id, teacher_id, class_id, subject_id])
+  @@index([school_id])
+  @@index([teacher_id])
+  @@index([class_id])
+  @@index([subject_id])
+}
+
+model Student {
+  id               String        @id @default(uuid())
+  school_id        String
+  admission_number String
+  full_name        String
+  class_id         String
+  status           StudentStatus @default(ACTIVE)
+  created_at       DateTime      @default(now())
+  updated_at       DateTime      @updatedAt
+
+  school       School              @relation(fields: [school_id], references: [id], onDelete: Cascade)
+  class        Class               @relation(fields: [class_id], references: [id], onDelete: Restrict)
+  results      Result[]
+  termStatuses StudentTermStatus[]
+  pins         Pin[]
+  complaints   Complaint[]
+
+  @@unique([school_id, admission_number])
+  @@index([school_id])
+  @@index([class_id])
+  @@index([admission_number])
+}
+
+model Term {
+  id          String     @id @default(uuid())
+  school_id   String
+  session     String     // e.g. "2026/2027"
+  term_number Int        // 1, 2, or 3
+  start_date  DateTime?
+  end_date    DateTime?
+  status      TermStatus @default(DRAFT)
+  created_at  DateTime   @default(now())
+  updated_at  DateTime   @updatedAt
+
+  school         School              @relation(fields: [school_id], references: [id], onDelete: Cascade)
+  results        Result[]
+  termStatuses   StudentTermStatus[]
+  paymentBatches PaymentBatch[]
+  pins           Pin[]
+  complaints     Complaint[]
+
+  @@unique([school_id, session, term_number])
+  @@index([school_id])
+  @@index([session])
+  @@index([status])
+}
+
+model Result {
+  id         String       @id @default(uuid())
+  school_id  String
+  student_id String
+  term_id    String
+  subject_id String
+  ca_score   Decimal?     @db.Decimal(5, 2)
+  exam_score Decimal?     @db.Decimal(5, 2)
+  total      Decimal?     @db.Decimal(5, 2)
+  grade      String?
+  remark     String?
+  status     ResultStatus @default(DRAFT)
+  created_at DateTime     @default(now())
+  updated_at DateTime     @updatedAt
+
+  school  School  @relation(fields: [school_id], references: [id], onDelete: Cascade)
+  student Student @relation(fields: [student_id], references: [id], onDelete: Cascade)
+  term    Term    @relation(fields: [term_id], references: [id], onDelete: Cascade)
+  subject Subject @relation(fields: [subject_id], references: [id], onDelete: Cascade)
+
+  @@unique([student_id, term_id, subject_id])
+  @@index([school_id])
+  @@index([student_id])
+  @@index([term_id])
+  @@index([subject_id])
+  @@index([status])
+}
+
+model StudentTermStatus {
+  id            String   @id @default(uuid())
+  school_id     String
+  student_id    String
+  term_id       String
+  fees_paid     Boolean  @default(false)
+  result_locked Boolean  @default(false)
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
+
+  school  School  @relation(fields: [school_id], references: [id], onDelete: Cascade)
+  student Student @relation(fields: [student_id], references: [id], onDelete: Cascade)
+  term    Term    @relation(fields: [term_id], references: [id], onDelete: Cascade)
+
+  @@unique([student_id, term_id])
+  @@index([school_id])
+  @@index([student_id])
+  @@index([term_id])
+}
+
+model PaymentBatch {
+  id              String        @id @default(uuid())
+  school_id       String
+  term_id         String
+  students_count  Int
+  amount_due      Decimal       @db.Decimal(12, 2)
+  amount_received Decimal       @default(0.00) @db.Decimal(12, 2)
+  status          PaymentStatus @default(PENDING)
+  confirmed_by    String?
+  confirmed_at    DateTime?
+  created_at      DateTime      @default(now())
+  updated_at      DateTime      @updatedAt
+
+  school    School @relation(fields: [school_id], references: [id], onDelete: Cascade)
+  term      Term   @relation(fields: [term_id], references: [id], onDelete: Cascade)
+  confirmer User?  @relation("BatchConfirmer", fields: [confirmed_by], references: [id], onDelete: SetNull)
+
+  @@index([school_id])
+  @@index([term_id])
+  @@index([status])
+}
+
+model Pin {
+  id           String    @id @default(uuid())
+  school_id    String
+  student_id   String
+  term_id      String
+  pin_hash     String
+  logins_used  Int       @default(0)
+  max_logins   Int       @default(5)
+  status       PinStatus @default(ACTIVE)
+  generated_at DateTime  @default(now())
+  expires_at   DateTime?
+  created_at   DateTime  @default(now())
+  updated_at   DateTime  @updatedAt
+
+  school  School  @relation(fields: [school_id], references: [id], onDelete: Cascade)
+  student Student @relation(fields: [student_id], references: [id], onDelete: Cascade)
+  term    Term    @relation(fields: [term_id], references: [id], onDelete: Cascade)
+
+  @@index([school_id])
+  @@index([student_id, term_id])
+  @@index([pin_hash])
+  @@index([status])
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  school_id  String?
+  user_id    String?
+  action     String
+  entity     String
+  entity_id  String?
+  old_values Json?
+  new_values Json?
+  reason     String?
+  timestamp  DateTime @default(now())
+
+  school School? @relation(fields: [school_id], references: [id], onDelete: Cascade)
+  user   User?   @relation(fields: [user_id], references: [id], onDelete: SetNull)
+
+  @@index([school_id])
+  @@index([user_id])
+  @@index([action])
+  @@index([timestamp])
+}
+
+model Complaint {
+  id         String          @id @default(uuid())
+  school_id  String
+  student_id String
+  term_id    String
+  message    String          @db.Text
+  status     ComplaintStatus @default(PENDING)
+  created_at DateTime        @default(now())
+  updated_at DateTime        @updatedAt
+
+  school  School  @relation(fields: [school_id], references: [id], onDelete: Cascade)
+  student Student @relation(fields: [student_id], references: [id], onDelete: Cascade)
+  term    Term    @relation(fields: [term_id], references: [id], onDelete: Cascade)
+
+  @@index([school_id])
+  @@index([student_id])
+  @@index([term_id])
+  @@index([status])
+}
