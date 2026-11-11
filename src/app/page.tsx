@@ -1,179 +1,226 @@
 "use client";
 
 import { platformConfig } from "@/lib/config";
+import { CheckCircle2, AlertCircle, Database, Server, ShieldCheck } from "lucide-react";
 
 export default function Home() {
   const { name, domain, isLocal, supabase } = platformConfig;
-
   const isSupabaseLive = supabase.isConfigured;
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col justify-between">
-      {/* Header */}
-      <header className="border-b border-slate-200 bg-white shadow-xs">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between">
+    <div className="min-h-screen bg-[#FAF8F3] text-[#2C2825] flex flex-col justify-between">
+      {/* Top Navigation Bar */}
+      <header className="border-b border-[#E9E4D9] bg-[#FFFFFF]">
+        <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-lg bg-emerald-600 text-white flex items-center justify-center font-bold text-lg shadow-sm">
+            <div className="w-8 h-8 rounded bg-[#671B24] text-white flex items-center justify-center font-serif font-bold text-sm tracking-wide">
               {name.charAt(0)}
             </div>
             <div>
-              <span className="font-bold text-xl text-slate-900 tracking-tight">{name}</span>
-              <span className="text-xs text-slate-500 block">School Result Management Platform</span>
+              <span className="font-semibold text-base text-[#2C2825] tracking-tight">{name}</span>
+              <span className="text-[11px] text-[#6B645D] block font-mono">School Result Management Platform</span>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-              Setup Ready
+          <div className="flex items-center gap-3">
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded text-xs font-medium bg-[#E5EDE5] text-[#3F4E40] border border-[#D3DDD3]">
+              <span className="w-1.5 h-1.5 rounded-full bg-[#526453]"></span>
+              Setup Verified
             </span>
           </div>
         </div>
       </header>
 
-      {/* Main Content */}
-      <main className="max-w-5xl mx-auto px-4 sm:px-6 py-10 w-full flex-1">
-        <div className="mb-8">
-          <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight sm:text-4xl">
-            Welcome to {name}
+      {/* Main Workspace */}
+      <main className="max-w-6xl mx-auto px-6 py-10 w-full flex-1">
+        {/* Page Header */}
+        <div className="border-b border-[#E9E4D9] pb-6 mb-8">
+          <p className="text-xs font-mono font-medium uppercase tracking-wider text-[#671B24]">
+            System Initialization & Environment Verification
+          </p>
+          <h1 className="mt-1 text-2xl font-serif font-bold text-[#2C2825] tracking-tight">
+            {name} Platform Engine
           </h1>
-          <p className="mt-2 text-base text-slate-600 max-w-2xl">
-            Multi-tenant result management platform built for Nigerian schools. Exam results, report cards, and PIN-based parent access.
+          <p className="mt-1 text-sm text-[#47423D] max-w-2xl">
+            Multi-tenant result publication, exam score processing, and PIN-authenticated parent report card access for Nigerian schools.
           </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* Dynamic Configuration Card */}
-          <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-xs">
-            <div className="flex items-center justify-between pb-4 border-b border-slate-100">
-              <h2 className="font-semibold text-slate-900 text-lg flex items-center gap-2">
-                <svg className="w-5 h-5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                </svg>
-                Dynamic Platform Identity
-              </h2>
-              <span className="text-xs bg-slate-100 text-slate-700 px-2 py-0.5 rounded font-mono">
-                Environment Driven
+        {/* Structured Grid */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+          {/* Platform Identity & Subdomain Routing */}
+          <div className="lg:col-span-2 border border-[#E9E4D9] bg-[#FFFFFF] rounded-sm">
+            <div className="px-5 py-3.5 border-b border-[#E9E4D9] bg-[#FAF8F3] flex items-center justify-between">
+              <span className="text-xs font-mono font-semibold uppercase tracking-wider text-[#47423D]">
+                Platform Identity & Subdomain Routing
               </span>
+              <span className="text-[11px] font-mono text-[#6B645D]">Environment-Driven</span>
             </div>
 
-            <div className="mt-4 space-y-3 text-sm">
-              <div className="flex justify-between py-1.5 border-b border-slate-50">
-                <span className="text-slate-500">Platform Name:</span>
-                <span className="font-mono font-semibold text-slate-900">{name}</span>
-              </div>
-              <div className="flex justify-between py-1.5 border-b border-slate-50">
-                <span className="text-slate-500">Base Domain:</span>
-                <span className="font-mono font-semibold text-slate-900">{domain}</span>
-              </div>
-              <div className="flex justify-between py-1.5 border-b border-slate-50">
-                <span className="text-slate-500">Environment Mode:</span>
-                <span className="font-mono text-slate-700">{isLocal ? "Local Development" : "Production"}</span>
-              </div>
-              <div className="py-2">
-                <span className="text-slate-500 text-xs block mb-1">Subdomain Routing Preview (Rule 10):</span>
-                <div className="space-y-1 font-mono text-xs">
-                  <div className="p-2 bg-slate-50 rounded border border-slate-200">
-                    <span className="text-slate-400">Parent Results: </span>
-                    <span className="text-emerald-700">{platformConfig.getSchoolResultsUrl("grace-academy")}</span>
+            <div className="p-5">
+              <table className="w-full text-xs text-left border-collapse">
+                <tbody>
+                  <tr className="border-b border-[#F4F0E6]">
+                    <td className="py-2.5 text-[#6B645D] font-mono w-40">PLATFORM_NAME</td>
+                    <td className="py-2.5 font-medium text-[#2C2825]">{name}</td>
+                    <td className="py-2.5 text-right text-[11px] text-[#6B645D]">Derived from env</td>
+                  </tr>
+                  <tr className="border-b border-[#F4F0E6]">
+                    <td className="py-2.5 text-[#6B645D] font-mono">PLATFORM_DOMAIN</td>
+                    <td className="py-2.5 font-medium text-[#2C2825]">{domain}</td>
+                    <td className="py-2.5 text-right text-[11px] text-[#6B645D]">Derived from env</td>
+                  </tr>
+                  <tr className="border-b border-[#F4F0E6]">
+                    <td className="py-2.5 text-[#6B645D] font-mono">ENVIRONMENT</td>
+                    <td className="py-2.5 font-medium text-[#2C2825]">
+                      {isLocal ? "Local Development" : "Production"}
+                    </td>
+                    <td className="py-2.5 text-right text-[11px] text-[#6B645D]">Port {platformConfig.port}</td>
+                  </tr>
+                </tbody>
+              </table>
+
+              <div className="mt-5 pt-4 border-t border-[#E9E4D9]">
+                <span className="text-xs font-semibold text-[#47423D] block mb-2 font-mono uppercase">
+                  Multi-Tenant Subdomain Mapping (Rule 10)
+                </span>
+                <div className="space-y-2 text-xs font-mono">
+                  <div className="flex items-center justify-between p-2.5 bg-[#FAF8F3] border border-[#E9E4D9] rounded-sm">
+                    <div>
+                      <span className="text-[#6B645D] block text-[11px]">Parent Results Address</span>
+                      <span className="text-[#671B24] font-medium">{platformConfig.getSchoolResultsUrl("school-slug")}</span>
+                    </div>
+                    <span className="text-[11px] text-[#6B645D]">PIN Login & Report Cards</span>
                   </div>
-                  <div className="p-2 bg-slate-50 rounded border border-slate-200">
-                    <span className="text-slate-400">Staff Portal: </span>
-                    <span className="text-blue-700">{platformConfig.getSchoolStaffUrl("grace-academy")}</span>
+                  <div className="flex items-center justify-between p-2.5 bg-[#FAF8F3] border border-[#E9E4D9] rounded-sm">
+                    <div>
+                      <span className="text-[#6B645D] block text-[11px]">Staff & Admin Address</span>
+                      <span className="text-[#3F4E40] font-medium">{platformConfig.getSchoolStaffUrl("school-slug")}</span>
+                    </div>
+                    <span className="text-[11px] text-[#6B645D]">Scores & Management</span>
                   </div>
                 </div>
               </div>
             </div>
           </div>
 
-          {/* Supabase & Database Status Card */}
-          <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-xs">
-            <div className="flex items-center justify-between pb-4 border-b border-slate-100">
-              <h2 className="font-semibold text-slate-900 text-lg flex items-center gap-2">
-                <svg className="w-5 h-5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2 1.5 3 3.5 3h9c2 0 3.5-1 3.5-3V7c0-2-1.5-3-3.5-3h-9C5.5 4 4 5 4 7zm0 0c0 2 1.5 3 3.5 3h9c2 0 3.5-1 3.5-3" />
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 12c0 2 1.5 3 3.5 3h9c2 0 3.5-1 3.5-3" />
-                </svg>
-                Supabase & Prisma Status
-              </h2>
-              <span className={`text-xs px-2 py-0.5 rounded font-medium ${isSupabaseLive ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"}`}>
-                {isSupabaseLive ? "Connected" : "Pending Keys"}
-              </span>
+          {/* Database & Infrastructure Status */}
+          <div className="border border-[#E9E4D9] bg-[#FFFFFF] rounded-sm flex flex-col justify-between">
+            <div>
+              <div className="px-5 py-3.5 border-b border-[#E9E4D9] bg-[#FAF8F3] flex items-center justify-between">
+                <span className="text-xs font-mono font-semibold uppercase tracking-wider text-[#47423D]">
+                  Infrastructure
+                </span>
+                <span className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium ${isSupabaseLive ? "bg-[#E5EDE5] text-[#3F4E40]" : "bg-[#F6EBEB] text-[#671B24]"}`}>
+                  {isSupabaseLive ? "Connected" : "Pending Keys"}
+                </span>
+              </div>
+
+              <div className="p-5 space-y-3.5 text-xs">
+                <div className="flex items-start justify-between">
+                  <div className="flex items-center gap-2">
+                    <Database className="w-3.5 h-3.5 text-[#6B645D]" />
+                    <span className="text-[#47423D] font-medium">Supabase API</span>
+                  </div>
+                  <span className="font-mono text-[11px] text-[#6B645D]">
+                    {isSupabaseLive ? (
+                      <span className="inline-flex items-center text-[#3F4E40] gap-1">
+                        <CheckCircle2 className="w-3 h-3" /> Ready
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center text-[#671B24] gap-1">
+                        <AlertCircle className="w-3 h-3" /> Set in .env.local
+                      </span>
+                    )}
+                  </span>
+                </div>
+
+                <div className="flex items-start justify-between">
+                  <div className="flex items-center gap-2">
+                    <Server className="w-3.5 h-3.5 text-[#6B645D]" />
+                    <span className="text-[#47423D] font-medium">Prisma Client</span>
+                  </div>
+                  <span className="font-mono text-[11px] text-[#3F4E40] inline-flex items-center gap-1">
+                    <CheckCircle2 className="w-3 h-3" /> Active (v6)
+                  </span>
+                </div>
+
+                <div className="flex items-start justify-between">
+                  <div className="flex items-center gap-2">
+                    <ShieldCheck className="w-3.5 h-3.5 text-[#6B645D]" />
+                    <span className="text-[#47423D] font-medium">Service Role</span>
+                  </div>
+                  <span className="font-mono text-[11px] text-[#6B645D]">
+                    Server-only (Isolated)
+                  </span>
+                </div>
+              </div>
             </div>
 
-            <div className="mt-4 space-y-3 text-sm">
-              <div className="flex items-center justify-between py-1.5 border-b border-slate-50">
-                <span className="text-slate-500">NEXT_PUBLIC_SUPABASE_URL</span>
-                <span className="font-mono text-xs">
-                  {supabase.url && !supabase.url.includes("placeholder") ? (
-                    <span className="text-emerald-700 font-medium">Configured</span>
-                  ) : (
-                    <span className="text-amber-700">Set in .env.local</span>
-                  )}
-                </span>
-              </div>
-              <div className="flex items-center justify-between py-1.5 border-b border-slate-50">
-                <span className="text-slate-500">NEXT_PUBLIC_SUPABASE_ANON_KEY</span>
-                <span className="font-mono text-xs">
-                  {supabase.anonKey && !supabase.anonKey.includes("placeholder") ? (
-                    <span className="text-emerald-700 font-medium">Configured</span>
-                  ) : (
-                    <span className="text-amber-700">Set in .env.local</span>
-                  )}
-                </span>
-              </div>
-              <div className="flex items-center justify-between py-1.5 border-b border-slate-50">
-                <span className="text-slate-500">SUPABASE_SERVICE_ROLE_KEY</span>
-                <span className="font-mono text-xs">
-                  {supabase.serviceRoleKey && !supabase.serviceRoleKey.includes("placeholder") ? (
-                    <span className="text-emerald-700 font-medium">Configured (Server-only)</span>
-                  ) : (
-                    <span className="text-amber-700">Set in .env.local</span>
-                  )}
-                </span>
-              </div>
-              <div className="flex items-center justify-between py-1.5 border-b border-slate-50">
-                <span className="text-slate-500">Prisma Client</span>
-                <span className="font-mono text-xs text-emerald-700 font-medium">
-                  Initialized (PostgreSQL)
-                </span>
-              </div>
-            </div>
-
-            <div className="mt-4 p-3 bg-slate-50 rounded-lg border border-slate-200 text-xs text-slate-600">
-              <p className="font-semibold text-slate-800 mb-1">To connect your live Supabase project:</p>
-              <p>Add your actual project URL and API keys in <code className="bg-slate-200 px-1 py-0.5 rounded text-slate-800">.env.local</code>. Never commit your secrets.</p>
+            <div className="p-5 border-t border-[#E9E4D9] bg-[#FAF8F3] text-xs text-[#6B645D]">
+              <p className="font-medium text-[#2C2825] mb-1">Database Configuration</p>
+              <p className="text-[11px] leading-relaxed">
+                PostgreSQL credentials and pooled connections are managed through environment variables in <code className="text-[#671B24] font-mono">.env.local</code>.
+              </p>
             </div>
           </div>
         </div>
 
-        {/* Stack Overview */}
-        <div className="mt-8 bg-white rounded-xl border border-slate-200 p-6 shadow-xs">
-          <h2 className="font-semibold text-slate-900 text-base mb-3">Project Foundation Verified</h2>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-center">
-            <div className="p-3 bg-slate-50 rounded-lg border border-slate-100">
-              <span className="block text-xs font-medium text-slate-500">Framework</span>
-              <span className="font-bold text-slate-900">Next.js App Router</span>
-            </div>
-            <div className="p-3 bg-slate-50 rounded-lg border border-slate-100">
-              <span className="block text-xs font-medium text-slate-500">Styling</span>
-              <span className="font-bold text-slate-900">Tailwind CSS</span>
-            </div>
-            <div className="p-3 bg-slate-50 rounded-lg border border-slate-100">
-              <span className="block text-xs font-medium text-slate-500">Database</span>
-              <span className="font-bold text-slate-900">PostgreSQL (Supabase)</span>
-            </div>
-            <div className="p-3 bg-slate-50 rounded-lg border border-slate-100">
-              <span className="block text-xs font-medium text-slate-500">ORM</span>
-              <span className="font-bold text-slate-900">Prisma Client</span>
-            </div>
+        {/* Roles & Workflow Matrix */}
+        <div className="border border-[#E9E4D9] bg-[#FFFFFF] rounded-sm">
+          <div className="px-5 py-3.5 border-b border-[#E9E4D9] bg-[#FAF8F3] flex items-center justify-between">
+            <span className="text-xs font-mono font-semibold uppercase tracking-wider text-[#47423D]">
+              Role-Based Architecture Matrix
+            </span>
+            <span className="text-[11px] font-mono text-[#6B645D]">BRIEF.md Roles</span>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs text-left">
+              <thead>
+                <tr className="border-b border-[#E9E4D9] bg-[#FAF8F3] text-[#6B645D] font-mono text-[11px]">
+                  <th className="py-2.5 px-5 font-medium">Role</th>
+                  <th className="py-2.5 px-5 font-medium">Authentication</th>
+                  <th className="py-2.5 px-5 font-medium">Permissions Scope</th>
+                  <th className="py-2.5 px-5 font-medium">Portal Route</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#F4F0E6]">
+                <tr>
+                  <td className="py-3 px-5 font-mono font-semibold text-[#671B24]">platform_admin</td>
+                  <td className="py-3 px-5 text-[#47423D]">Direct credentials / MFA</td>
+                  <td className="py-3 px-5 text-[#47423D]">Platform-wide: create schools, configure pricing, manage billing</td>
+                  <td className="py-3 px-5 font-mono text-[11px] text-[#6B645D]">/admin</td>
+                </tr>
+                <tr>
+                  <td className="py-3 px-5 font-mono font-semibold text-[#3F4E40]">school_admin</td>
+                  <td className="py-3 px-5 text-[#47423D]">School staff credentials</td>
+                  <td className="py-3 px-5 text-[#47423D]">School-scoped: students, classes, payments, result withholding</td>
+                  <td className="py-3 px-5 font-mono text-[11px] text-[#6B645D]">slug-staff.{domain}</td>
+                </tr>
+                <tr>
+                  <td className="py-3 px-5 font-mono font-semibold text-[#526453]">teacher</td>
+                  <td className="py-3 px-5 text-[#47423D]">School staff credentials</td>
+                  <td className="py-3 px-5 text-[#47423D]">Assigned classes and subjects only; score uploads</td>
+                  <td className="py-3 px-5 font-mono text-[11px] text-[#6B645D]">slug-staff.{domain}</td>
+                </tr>
+                <tr>
+                  <td className="py-3 px-5 font-mono font-semibold text-[#6B645D]">parent</td>
+                  <td className="py-3 px-5 text-[#47423D]">Admission No + Term PIN hash</td>
+                  <td className="py-3 px-5 text-[#47423D]">View-only access to published term report cards for single student</td>
+                  <td className="py-3 px-5 font-mono text-[11px] text-[#6B645D]">slug.{domain}</td>
+                </tr>
+              </tbody>
+            </table>
           </div>
         </div>
       </main>
 
       {/* Footer */}
-      <footer className="border-t border-slate-200 bg-white py-4 text-center text-xs text-slate-500">
-        <p>{name} Platform &copy; 2026 &mdash; Configured on {domain}</p>
+      <footer className="border-t border-[#E9E4D9] bg-[#FFFFFF] py-4 text-xs text-[#6B645D]">
+        <div className="max-w-6xl mx-auto px-6 flex items-center justify-between">
+          <span>{name} Educational Systems &copy; 2026</span>
+          <span className="font-mono text-[11px]">Domain: {domain}</span>
+        </div>
       </footer>
     </div>
   );

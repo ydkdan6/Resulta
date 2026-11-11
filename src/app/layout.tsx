@@ -18,7 +18,7 @@ export const metadata: Metadata = {
     template: `%s | ${platformConfig.name}`,
     default: `${platformConfig.name} - School Result Management Platform`,
   },
-  description: `${platformConfig.name} school result management platform for Nigerian schools.`,
+  description: `${platformConfig.name} school result management platform for Nigerian educational institutions.`,
 };
 
 export default function RootLayout({
@@ -31,7 +31,9 @@ export default function RootLayout({
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col bg-slate-50 text-slate-900">{children}</body>
+      <body className="min-h-full flex flex-col bg-[#FAF8F3] text-[#2C2825] selection:bg-[#F6EBEB] selection:text-[#671B24]">
+        {children}
+      </body>
     </html>
   );
 }

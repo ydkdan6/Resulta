@@ -1,26 +1,43 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #FAF8F3;
+  --foreground: #2C2825;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+@theme {
+  --color-burgundy-950: #2D0C10;
+  --color-burgundy-900: #461218;
+  --color-burgundy-800: #671B24;
+  --color-burgundy-700: #83222D;
+  --color-burgundy-600: #A02D3A;
+  --color-burgundy-100: #F6EBEB;
+  --color-burgundy-50: #FBF5F5;
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --color-sage-900: #2E3A2F;
+  --color-sage-800: #3F4E40;
+  --color-sage-700: #526453;
+  --color-sage-600: #687D69;
+  --color-sage-200: #D3DDD3;
+  --color-sage-100: #E5EDE5;
+  --color-sage-50: #F3F6F3;
+
+  --color-beige-900: #2C2825;
+  --color-beige-800: #47423D;
+  --color-beige-700: #6B645D;
+  --color-beige-400: #B8B0A5;
+  --color-beige-300: #D9D3C7;
+  --color-beige-200: #E9E4D9;
+  --color-beige-100: #F4F0E6;
+  --color-beige-50: #FAF8F3;
+
+  --font-sans: var(--font-geist-sans), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: var(--font-geist-mono), monospace;
 }
 
 body {
-  background: var(--background);
+  background-color: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
 }
