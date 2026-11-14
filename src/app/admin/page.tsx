@@ -1,0 +1,76 @@
+import { redirect } from 'next/navigation';
+import { getSession } from '@/lib/auth/session';
+import { prisma } from '@/lib/prisma';
+import AdminDashboardClient from './AdminDashboardClient';
+
+export default async function PlatformAdminDashboardPage() {
+  const session = await getSession();
+
+  if (!session) {
+    redirect('/admin/login');
+  }
+
+  if (session.role !== 'platform_admin') {
+    redirect('/admin/login');
+  }
+
+  // Fetch all schools with their classes, subjects, and teachers
+  const [schools, teachers] = await Promise.all([
+    prisma.school.findMany({
+      orderBy: { created_at: 'desc' },
+      include: {
+        classes: {
+          select: { id: true, name: true },
+          orderBy: { name: 'asc' },
+        },
+        subjects: {
+          select: { id: true, name: true, code: true },
+          orderBy: { name: 'asc' },
+        },
+        users: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            role: true,
+            must_change_password: true,
+          },
+        },
+        _count: {
+          select: {
+            classes: true,
+            subjects: true,
+            students: true,
+          },
+        },
+      },
+    }),
+    prisma.user.findMany({
+      where: { role: 'teacher' },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        school_id: true,
+        school: { select: { id: true, name: true, slug: true } },
+        must_change_password: true,
+        teacherAssignments: {
+          include: {
+            class: { select: { id: true, name: true } },
+            subject: { select: { id: true, name: true, code: true } },
+          },
+        },
+      },
+      orderBy: { name: 'asc' },
+    }),
+  ]);
+
+  return (
+    <AdminDashboardClient
+      adminName={session.name}
+      adminEmail={session.email}
+      initialSchools={schools}
+      initialTeachers={teachers}
+    />
+  );
+}

@@ -83,9 +83,10 @@ model User {
   email         String   @unique
   name          String
   password_hash String
-  role          Role
-  school_id     String?
-  created_at    DateTime @default(now())
+  role                 Role
+  school_id            String?
+  must_change_password Boolean  @default(false)
+  created_at           DateTime @default(now())
   updated_at    DateTime @updatedAt
 
   school             School?             @relation(fields: [school_id], references: [id], onDelete: Cascade)
