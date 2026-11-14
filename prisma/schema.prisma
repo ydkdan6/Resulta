@@ -72,6 +72,7 @@ model School {
   studentTermStatuses StudentTermStatus[]
   paymentBatches      PaymentBatch[]
   pins                Pin[]
+  gradingSchemes      GradingScheme[]
   auditLogs           AuditLog[]
   complaints          Complaint[]
 
@@ -79,15 +80,16 @@ model School {
 }
 
 model User {
-  id            String   @id @default(uuid())
-  email         String   @unique
-  name          String
-  password_hash String
+  id                   String   @id @default(uuid())
+  email                String?  @unique
+  phone                String?  @unique
+  name                 String
+  password_hash        String
   role                 Role
   school_id            String?
   must_change_password Boolean  @default(false)
   created_at           DateTime @default(now())
-  updated_at    DateTime @updatedAt
+  updated_at           DateTime @updatedAt
 
   school             School?             @relation(fields: [school_id], references: [id], onDelete: Cascade)
   teacherAssignments TeacherAssignment[]
@@ -96,6 +98,7 @@ model User {
 
   @@index([school_id])
   @@index([email])
+  @@index([phone])
 }
 
 model Class {

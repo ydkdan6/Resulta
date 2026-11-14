@@ -3,6 +3,8 @@ import { getSession } from '@/lib/auth/session';
 import { getTeacherAssignedClasses } from '@/lib/auth/scope';
 import { BookOpen, Users, LogOut, KeyRound } from 'lucide-react';
 
+export const instant = false;
+
 export default async function TeacherMyClassesPage() {
   const session = await getSession();
 

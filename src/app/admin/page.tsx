@@ -3,6 +3,8 @@ import { getSession } from '@/lib/auth/session';
 import { prisma } from '@/lib/prisma';
 import AdminDashboardClient from './AdminDashboardClient';
 
+export const instant = false;
+
 export default async function PlatformAdminDashboardPage() {
   const session = await getSession();
 

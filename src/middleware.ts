@@ -16,7 +16,10 @@ export async function middleware(request: NextRequest) {
   }
 
   // Clone headers to pass down context to Route Handlers & Server Components
+  // Clone headers – we will overwrite any incoming x-portal-type to enforce our own value
   const requestHeaders = new Headers(request.headers);
+  // Ensure x-portal-type cannot be spoofed
+  requestHeaders.delete('x-portal-type');
   if (schoolSlug) {
     requestHeaders.set('x-school-slug', schoolSlug);
   }

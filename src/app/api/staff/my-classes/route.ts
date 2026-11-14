@@ -1,6 +1,15 @@
+// src/app/api/staff/my-classes/route.ts
 import { NextResponse } from 'next/server';
 import { requireAuth, getTeacherAssignedClasses, AuthError } from '@/lib/auth/scope';
 import { prisma } from '@/lib/prisma';
+
+// Force dynamic rendering – needed because we read cookies/session.
+
+// export const revalidate = 0;
+// export const instant = false;
+
+
+
 
 export async function GET() {
   try {
@@ -10,14 +19,14 @@ export async function GET() {
       return NextResponse.json({ error: 'User is not associated with any school.' }, { status: 400 });
     }
 
+    // Teacher – only their assigned classes
     if (session.role === 'teacher') {
-      // Teachers see ONLY their assigned classes and subjects
       const classes = await getTeacherAssignedClasses(session.id, session.school_id);
       return NextResponse.json({ classes });
     }
 
+    // School admin or platform admin – all classes in the school
     if (session.role === 'school_admin' || session.role === 'platform_admin') {
-      // School administrators see all classes for their school
       const classes = await prisma.class.findMany({
         where: { school_id: session.school_id },
         include: {
@@ -31,7 +40,6 @@ export async function GET() {
         },
         orderBy: { name: 'asc' },
       });
-
       return NextResponse.json({ classes });
     }
 

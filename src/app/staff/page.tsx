@@ -4,6 +4,8 @@ import { prisma } from '@/lib/prisma';
 import { Building2, Users, GraduationCap, BookOpen, LogOut } from 'lucide-react';
 import SchoolAdminSettingsClient from './SchoolAdminSettingsClient';
 
+export const instant = false;
+
 export default async function SchoolAdminPortalPage() {
   const session = await getSession();
 
