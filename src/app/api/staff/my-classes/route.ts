@@ -1,7 +1,11 @@
-// src/app/api/staff/my-classes/route.ts
 import { NextResponse } from 'next/server';
 import { requireAuth, getTeacherAssignedClasses, AuthError } from '@/lib/auth/scope';
 import { prisma } from '@/lib/prisma';
+
+
+
+
+
 
 // Force dynamic rendering – needed because we read cookies/session.
 

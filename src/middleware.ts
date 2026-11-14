@@ -17,7 +17,22 @@ export async function middleware(request: NextRequest) {
 
   // Clone headers to pass down context to Route Handlers & Server Components
   // Clone headers – we will overwrite any incoming x-portal-type to enforce our own value
+    // Clone headers – we will overwrite any incoming x-portal-type to enforce our own value
   const requestHeaders = new Headers(request.headers);
+  // Ensure x-portal-type cannot be spoofed
+  requestHeaders.delete('x-portal-type');
+  // Ensure incoming x-school-slug cannot be spoofed
+  requestHeaders.delete('x-school-slug');
+  if (schoolSlug) {
+    requestHeaders.set('x-school-slug', schoolSlug);
+  }
+  if (isStaffSubdomain) {
+    requestHeaders.set('x-portal-type', 'staff');
+  } else if (schoolSlug) {
+    // results subdomain
+    requestHeaders.set('x-portal-type', 'results');
+  }
+
   // Ensure x-portal-type cannot be spoofed
   requestHeaders.delete('x-portal-type');
   if (schoolSlug) {
@@ -46,7 +61,17 @@ export async function middleware(request: NextRequest) {
       if (session?.role === 'platform_admin') {
         return NextResponse.redirect(new URL('/admin', request.url));
       }
-      return NextResponse.next({ request: { headers: requestHeaders } });
+        // --- 4. Results Portal Routes (no -staff) ---
+  const portalType = requestHeaders.get('x-portal-type');
+  if (portalType === 'results') {
+    // Allow only the root page (PIN login) and static assets.
+    const allowed = ['/', '/favicon.ico'];
+    const isAllowed = allowed.includes(pathname) || pathname.startsWith('/_next');
+    if (!isAllowed) {
+      return new NextResponse('Not Found', { status: 404 });
+    }
+  }
+
     }
 
     // Require platform_admin role
@@ -62,7 +87,17 @@ export async function middleware(request: NextRequest) {
       );
     }
 
-    return NextResponse.next({ request: { headers: requestHeaders } });
+      // --- 4. Results Portal Routes (no -staff) ---
+  const portalType = requestHeaders.get('x-portal-type');
+  if (portalType === 'results') {
+    // Allow only the root page (PIN login) and static assets.
+    const allowed = ['/', '/favicon.ico'];
+    const isAllowed = allowed.includes(pathname) || pathname.startsWith('/_next');
+    if (!isAllowed) {
+      return new NextResponse('Not Found', { status: 404 });
+    }
+  }
+
   }
 
   // --- 2. Staff Portal Routes (/staff/*) ---
@@ -73,7 +108,17 @@ export async function middleware(request: NextRequest) {
         const target = session.role === 'teacher' ? '/staff/my-classes' : '/staff';
         return NextResponse.redirect(new URL(target, request.url));
       }
-      return NextResponse.next({ request: { headers: requestHeaders } });
+        // --- 4. Results Portal Routes (no -staff) ---
+  const portalType = requestHeaders.get('x-portal-type');
+  if (portalType === 'results') {
+    // Allow only the root page (PIN login) and static assets.
+    const allowed = ['/', '/favicon.ico'];
+    const isAllowed = allowed.includes(pathname) || pathname.startsWith('/_next');
+    if (!isAllowed) {
+      return new NextResponse('Not Found', { status: 404 });
+    }
+  }
+
     }
 
     // Require authentication
@@ -116,7 +161,17 @@ export async function middleware(request: NextRequest) {
       }
     }
 
-    return NextResponse.next({ request: { headers: requestHeaders } });
+      // --- 4. Results Portal Routes (no -staff) ---
+  const portalType = requestHeaders.get('x-portal-type');
+  if (portalType === 'results') {
+    // Allow only the root page (PIN login) and static assets.
+    const allowed = ['/', '/favicon.ico'];
+    const isAllowed = allowed.includes(pathname) || pathname.startsWith('/_next');
+    if (!isAllowed) {
+      return new NextResponse('Not Found', { status: 404 });
+    }
+  }
+
   }
 
   // --- 3. Protected API Routes (/api/*) ---
@@ -141,7 +196,17 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  return NextResponse.next({ request: { headers: requestHeaders } });
+    // --- 4. Results Portal Routes (no -staff) ---
+  const portalType = requestHeaders.get('x-portal-type');
+  if (portalType === 'results') {
+    // Allow only the root page (PIN login) and static assets.
+    const allowed = ['/', '/favicon.ico'];
+    const isAllowed = allowed.includes(pathname) || pathname.startsWith('/_next');
+    if (!isAllowed) {
+      return new NextResponse('Not Found', { status: 404 });
+    }
+  }
+
 }
 
 export const config = {

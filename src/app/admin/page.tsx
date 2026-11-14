@@ -17,7 +17,7 @@ export default async function PlatformAdminDashboardPage() {
   }
 
   // Fetch all schools with their classes, subjects, and teachers
-  const [schools, teachers] = await Promise.all([
+  const [schoolsRaw, teachers] = await Promise.all([
     prisma.school.findMany({
       orderBy: { created_at: 'desc' },
       include: {
@@ -66,6 +66,13 @@ export default async function PlatformAdminDashboardPage() {
       orderBy: { name: 'asc' },
     }),
   ]);
+
+  // Convert Prisma Decimal objects to plain numbers for client compatibility
+  const schools = schoolsRaw.map((s) => ({
+    ...s,
+    card_price: Number(s.card_price),
+    platform_share: Number(s.platform_share),
+  }));
 
   return (
     <AdminDashboardClient
