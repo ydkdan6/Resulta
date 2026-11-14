@@ -5,12 +5,25 @@
 import { notFound } from 'next/navigation';
 import { headers } from 'next/headers';
 import { prisma } from '@/lib/prisma';
+import React, { Suspense } from 'react';
+import PinLoginForm from './PinLoginForm';
 
-export default async function ResultsPortalPage() {
-  // The middleware populates the x-school-slug header
-  const slugHeader = headers().get('x-school-slug');
+export default function ResultsPortalPage() {
+  // Render the UI inside Suspense; header reading happens in child component.
+  return (
+    <Suspense fallback={<div className="flex min-h-screen items-center justify-center bg-gray-100 p-4"><p>Loading…</p></div>}>
+      <ResultsContent />
+    </Suspense>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Child component that performs the Prisma query. It runs as a server component.
+// ---------------------------------------------------------------------------
+async function ResultsContent() {
+  // Read the slug header inside this server component.
+  const slugHeader = (await headers()).get('x-school-slug');
   if (!slugHeader) {
-    // No slug means this is not a results subdomain – let Next handle 404
     notFound();
     return null;
   }
@@ -25,14 +38,7 @@ export default async function ResultsPortalPage() {
     return null;
   }
 
-  // Simple PIN login form – no actual verification yet
-  // Submitting will just display a placeholder message.
-  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    // eslint-disable-next-line no-alert
-    alert('PIN login not available yet.');
-  }
-
+  // Render the UI; the form is a client component.
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-gray-100 p-4">
       <div className="w-full max-w-md rounded-lg bg-white p-6 shadow">
@@ -41,18 +47,8 @@ export default async function ResultsPortalPage() {
           <img src={school.logo_url} alt={`${school.name} logo`} className="mx-auto mb-4 h-16" />
         )}
         <h1 className="text-center text-2xl font-bold mb-4">{school.name} Results Portal</h1>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium" htmlFor="admission">Admission Number</label>
-            <input id="admission" name="admission" type="text" required className="mt-1 block w-full rounded border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" />
-          </div>
-          <div>
-            <label className="block text-sm font-medium" htmlFor="pin">PIN</label>
-            <input id="pin" name="pin" type="password" required className="mt-1 block w-full rounded border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" />
-          </div>
-          <button type="submit" className="w-full rounded bg-indigo-600 px-4 py-2 text-white hover:bg-indigo-700">Login</button>
-        </form>
-        <p className="mt-4 text-center text-sm text-gray-500">Not available yet – contact your school for assistance.</p>
+        <PinLoginForm />
+        <p className="mt-4 text-center text-sm text-gray-500">Not available yet? contact your school for assistance.</p>
       </div>
     </div>
   );

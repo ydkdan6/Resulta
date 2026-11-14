@@ -1,3 +1,6 @@
+// src/middleware.ts
+// Middleware that routes requests based on subdomain and enforces security.
+
 import { NextRequest, NextResponse } from 'next/server';
 import { verifySessionToken, SESSION_COOKIE_NAME } from '@/lib/auth/session';
 
@@ -5,47 +8,40 @@ export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const host = request.headers.get('host') || '';
 
-  // Extract staff subdomain if present: e.g. "grace-high-staff.localhost:3000"
+  // ------------------------------------------------------------
+  // 1️⃣ Detect subdomain type (staff vs results)
+  // ------------------------------------------------------------
   let schoolSlug: string | null = null;
-  let isStaffSubdomain = false;
+  let portalType: 'staff' | 'results' | null = null;
 
-  const staffSubdomainMatch = host.match(/^([a-z0-9-]+)-staff\./i);
-  if (staffSubdomainMatch) {
-    schoolSlug = staffSubdomainMatch[1].toLowerCase();
-    isStaffSubdomain = true;
+  const staffMatch = host.match(/^([a-z0-9-]+)-staff\./i);
+  if (staffMatch) {
+    schoolSlug = staffMatch[1].toLowerCase();
+    portalType = 'staff';
+  } else {
+    // plain slug subdomain (results portal)
+    const slugMatch = host.match(/^([a-z0-9-]+)\./i);
+    if (slugMatch) {
+      schoolSlug = slugMatch[1].toLowerCase();
+      portalType = 'results';
+    }
   }
 
-  // Clone headers to pass down context to Route Handlers & Server Components
-  // Clone headers – we will overwrite any incoming x-portal-type to enforce our own value
-    // Clone headers – we will overwrite any incoming x-portal-type to enforce our own value
+  // ------------------------------------------------------------
+  // 2️⃣ Prepare request headers – remove any spoofed values
+  // ------------------------------------------------------------
   const requestHeaders = new Headers(request.headers);
-  // Ensure x-portal-type cannot be spoofed
   requestHeaders.delete('x-portal-type');
-  // Ensure incoming x-school-slug cannot be spoofed
   requestHeaders.delete('x-school-slug');
-  if (schoolSlug) {
-    requestHeaders.set('x-school-slug', schoolSlug);
-  }
-  if (isStaffSubdomain) {
-    requestHeaders.set('x-portal-type', 'staff');
-  } else if (schoolSlug) {
-    // results subdomain
-    requestHeaders.set('x-portal-type', 'results');
-  }
 
-  // Ensure x-portal-type cannot be spoofed
-  requestHeaders.delete('x-portal-type');
-  if (schoolSlug) {
-    requestHeaders.set('x-school-slug', schoolSlug);
-  }
-  if (isStaffSubdomain) {
-    requestHeaders.set('x-portal-type', 'staff');
-  }
+  if (schoolSlug) requestHeaders.set('x-school-slug', schoolSlug);
+  if (portalType) requestHeaders.set('x-portal-type', portalType);
 
-  // Check session cookie
+  // ------------------------------------------------------------
+  // 3️⃣ Session handling – expose user data to downstream handlers
+  // ------------------------------------------------------------
   const token = request.cookies.get(SESSION_COOKIE_NAME)?.value;
   const session = token ? await verifySessionToken(token) : null;
-
   if (session) {
     requestHeaders.set('x-user-id', session.id);
     requestHeaders.set('x-user-role', session.role);
@@ -54,87 +50,48 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  // --- 1. Platform Admin Routes (/admin/*) ---
+  // ------------------------------------------------------------
+  // 4️⃣ Platform admin routes (/admin/*)
+  // ------------------------------------------------------------
   if (pathname.startsWith('/admin')) {
-    // Allow public access to admin login
     if (pathname === '/admin/login') {
       if (session?.role === 'platform_admin') {
         return NextResponse.redirect(new URL('/admin', request.url));
       }
-        // --- 4. Results Portal Routes (no -staff) ---
-  const portalType = requestHeaders.get('x-portal-type');
-  if (portalType === 'results') {
-    // Allow only the root page (PIN login) and static assets.
-    const allowed = ['/', '/favicon.ico'];
-    const isAllowed = allowed.includes(pathname) || pathname.startsWith('/_next');
-    if (!isAllowed) {
-      return new NextResponse('Not Found', { status: 404 });
+      return NextResponse.next({ request: { headers: requestHeaders } });
     }
-  }
-
-    }
-
-    // Require platform_admin role
     if (!session) {
       return NextResponse.redirect(new URL('/admin/login', request.url));
     }
-
     if (session.role !== 'platform_admin') {
-      // Unauthorised role returns 403 Forbidden
       return new NextResponse(
         JSON.stringify({ error: 'Forbidden: Platform administrator privileges required.' }),
         { status: 403, headers: { 'content-type': 'application/json' } }
       );
     }
-
-      // --- 4. Results Portal Routes (no -staff) ---
-  const portalType = requestHeaders.get('x-portal-type');
-  if (portalType === 'results') {
-    // Allow only the root page (PIN login) and static assets.
-    const allowed = ['/', '/favicon.ico'];
-    const isAllowed = allowed.includes(pathname) || pathname.startsWith('/_next');
-    if (!isAllowed) {
-      return new NextResponse('Not Found', { status: 404 });
-    }
+    return NextResponse.next({ request: { headers: requestHeaders } });
   }
 
-  }
-
-  // --- 2. Staff Portal Routes (/staff/*) ---
+  // ------------------------------------------------------------
+  // 5️⃣ Staff portal routes (/staff/*)
+  // ------------------------------------------------------------
   if (pathname.startsWith('/staff')) {
-    // Allow public access to staff login
     if (pathname === '/staff/login') {
       if (session && (session.role === 'school_admin' || session.role === 'teacher')) {
         const target = session.role === 'teacher' ? '/staff/my-classes' : '/staff';
         return NextResponse.redirect(new URL(target, request.url));
       }
-        // --- 4. Results Portal Routes (no -staff) ---
-  const portalType = requestHeaders.get('x-portal-type');
-  if (portalType === 'results') {
-    // Allow only the root page (PIN login) and static assets.
-    const allowed = ['/', '/favicon.ico'];
-    const isAllowed = allowed.includes(pathname) || pathname.startsWith('/_next');
-    if (!isAllowed) {
-      return new NextResponse('Not Found', { status: 404 });
+      return NextResponse.next({ request: { headers: requestHeaders } });
     }
-  }
-
-    }
-
-    // Require authentication
     if (!session) {
       return NextResponse.redirect(new URL('/staff/login', request.url));
     }
-
-    // Role check: Only school_admin and teacher can access /staff routes
-    if (session.role !== 'school_admin' && session.role !== 'teacher' && session.role !== 'platform_admin') {
+    if (!['school_admin', 'teacher', 'platform_admin'].includes(session.role)) {
       return new NextResponse(
         JSON.stringify({ error: 'Forbidden: Staff privileges required.' }),
         { status: 403, headers: { 'content-type': 'application/json' } }
       );
     }
-
-    // Tenant check: If accessed on a staff subdomain, verify tenant match
     if (schoolSlug && session.role !== 'platform_admin') {
       if (session.school_slug && session.school_slug !== schoolSlug) {
         return new NextResponse(
@@ -143,50 +100,58 @@ export async function middleware(request: NextRequest) {
         );
       }
     }
-
-    // Teacher restriction: Teachers can see ONLY their 'My classes' page, change password, or logout
     if (session.role === 'teacher') {
-      const allowedTeacherPaths = [
-        '/staff/my-classes',
-        '/staff/change-password',
-        '/staff/logout',
-      ];
-
-      const isAllowed = allowedTeacherPaths.some((p) => pathname === p || pathname.startsWith(`${p}/`));
-      if (!isAllowed) {
+      const allowedTeacherPaths = ['/staff/my-classes', '/staff/change-password', '/staff/logout'];
+      const allowed = allowedTeacherPaths.some(p => pathname === p || pathname.startsWith(`${p}/`));
+      if (!allowed) {
         return new NextResponse(
           JSON.stringify({ error: 'Forbidden: Teachers are restricted to the My Classes page.' }),
           { status: 403, headers: { 'content-type': 'application/json' } }
         );
       }
     }
+    return NextResponse.next({ request: { headers: requestHeaders } });
+  }
 
-      // --- 4. Results Portal Routes (no -staff) ---
-  const portalType = requestHeaders.get('x-portal-type');
+  // ------------------------------------------------------------
+  // 6️⃣ Staff subdomain root rewrite to /staff
+  // ------------------------------------------------------------
+  if (portalType === 'staff') {
+    const allowed = ['/', '/favicon.ico'];
+    const isAllowed = allowed.includes(pathname) || pathname.startsWith('/_next');
+    if (isAllowed && pathname === '/') {
+      const url = request.nextUrl.clone();
+      url.pathname = '/staff';
+      return NextResponse.rewrite(url, { request: { headers: requestHeaders } });
+    }
+  }
+
+  // ------------------------------------------------------------
+  // 7️⃣ Results portal handling (no -staff subdomain)
+  // ------------------------------------------------------------
   if (portalType === 'results') {
-    // Allow only the root page (PIN login) and static assets.
     const allowed = ['/', '/favicon.ico'];
     const isAllowed = allowed.includes(pathname) || pathname.startsWith('/_next');
     if (!isAllowed) {
       return new NextResponse('Not Found', { status: 404 });
     }
+    const url = request.nextUrl.clone();
+    url.pathname = `/${schoolSlug ?? 'placeholder'}`;
+    return NextResponse.rewrite(url, { request: { headers: requestHeaders } });
   }
 
-  }
-
-  // --- 3. Protected API Routes (/api/*) ---
+  // ------------------------------------------------------------
+  // 8️⃣ Protected API routes
+  // ------------------------------------------------------------
   if (pathname.startsWith('/api/admin')) {
     if (!session || session.role !== 'platform_admin') {
-      return NextResponse.json(
-        { error: 'Forbidden: Platform admin privileges required.' },
-        { status: 403 }
-      );
+      return NextResponse.json({ error: 'Forbidden: Platform admin privileges required.' }, { status: 403 });
     }
+    return NextResponse.next({ request: { headers: requestHeaders } });
   }
 
   if (pathname.startsWith('/api/staff/teachers')) {
-    // BRIEF.md rule: school_admin cannot create teachers or assignments. Only platform_admin can.
-    if (request.method === 'POST' || request.method === 'PUT' || request.method === 'DELETE') {
+    if (['POST', 'PUT', 'DELETE'].includes(request.method)) {
       if (!session || session.role !== 'platform_admin') {
         return NextResponse.json(
           { error: 'Forbidden: School administrators cannot create teachers or assignments.' },
@@ -194,29 +159,15 @@ export async function middleware(request: NextRequest) {
         );
       }
     }
+    return NextResponse.next({ request: { headers: requestHeaders } });
   }
 
-    // --- 4. Results Portal Routes (no -staff) ---
-  const portalType = requestHeaders.get('x-portal-type');
-  if (portalType === 'results') {
-    // Allow only the root page (PIN login) and static assets.
-    const allowed = ['/', '/favicon.ico'];
-    const isAllowed = allowed.includes(pathname) || pathname.startsWith('/_next');
-    if (!isAllowed) {
-      return new NextResponse('Not Found', { status: 404 });
-    }
-  }
-
+  // ------------------------------------------------------------
+  // 9️⃣ Default – pass through unchanged with enriched headers.
+  // ------------------------------------------------------------
+  return NextResponse.next({ request: { headers: requestHeaders } });
 }
 
 export const config = {
-  matcher: [
-    /*
-     * Match all request paths except for the ones starting with:
-     * - _next/static (static files)
-     * - _next/image (image optimization files)
-     * - favicon.ico (favicon file)
-     */
-    '/((?!_next/static|_next/image|favicon.ico).*)',
-  ],
+  matcher: ['/((?!_next/static|_next/image|favicon.ico).*)'],
 };
