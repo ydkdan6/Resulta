@@ -1,6 +1,6 @@
 import { PrismaClient, Role, StudentStatus, TermStatus, ResultStatus, PinStatus } from '@prisma/client';
-import { hashPin } from '../src/lib/auth/pin.ts';
-import { hashPassword } from '../src/lib/auth/password.ts';
+import { hashPin } from '../src/lib/auth/pin';
+import { hashPassword } from '../src/lib/auth/password';
 
 const prisma = new PrismaClient();
 
