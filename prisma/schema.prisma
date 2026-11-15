@@ -334,3 +334,18 @@ model Complaint {
   @@index([term_id])
   @@index([status])
 }
+
+model GradingScheme {
+  id          String   @id @default(uuid())
+  school_id   String
+  class_level String?   // optional, e.g., "Form 1"
+  name        String   // scheme name, e.g., "Default"
+  parts       Json     // [{ name: string, max: number }]
+  boundaries  Json     // [{ grade: string, min: number, max: number, remark: string }]
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  school School @relation(fields: [school_id], references: [id], onDelete: Cascade)
+
+  @@index([school_id])
+}

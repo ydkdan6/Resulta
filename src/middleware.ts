@@ -71,14 +71,20 @@ export async function middleware(request: NextRequest) {
   }
 
   // 2. Session
+  // 1. Extract session early so we can enforce auth on APIs before other logic.
   const token = request.cookies.get(SESSION_COOKIE_NAME)?.value;
   const session = token ? await verifySessionToken(token) : null;
   if (session) {
     requestHeaders.set("x-user-id", session.id);
     requestHeaders.set("x-user-role", session.role);
-    if (session.school_id)
-      requestHeaders.set("x-user-school-id", session.school_id);
+    if (session.school_id) requestHeaders.set("x-user-school-id", session.school_id);
   }
+
+  // 2. Unauthenticated API calls should immediately return 401 (except auth routes).
+  if (pathname.startsWith("/api/") && !session && !pathname.startsWith("/api/auth/")) {
+    return json({ error: "Unauthenticated" }, 401);
+  }
+
 
   // 3. Cross-school check on a staff address (fails closed).
   const crossSchoolExempt =
@@ -172,11 +178,11 @@ export async function middleware(request: NextRequest) {
 
   // 8. Protected API routes
   if (pathname.startsWith("/api/admin")) {
-    if (session?.role !== "platform_admin") {
-      return json(
-        { error: "Forbidden: Platform admin privileges required." },
-        403,
-      );
+    if (!session) {
+      return json({ error: "Unauthenticated" }, 401);
+    }
+    if (session.role !== "platform_admin") {
+      return json({ error: "Forbidden: Platform administrator privileges required." }, 403);
     }
     return pass();
   }
