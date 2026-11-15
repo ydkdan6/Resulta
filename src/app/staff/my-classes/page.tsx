@@ -1,7 +1,8 @@
 import { redirect } from 'next/navigation';
 import { getSession } from '@/lib/auth/session';
 import { getTeacherAssignedClasses } from '@/lib/auth/scope';
-import { BookOpen, Users, LogOut, KeyRound } from 'lucide-react';
+import { LogOut, KeyRound } from 'lucide-react';
+import TeacherMyClassesClient from './TeacherMyClassesClient';
 
 export const instant = false;
 
@@ -80,83 +81,13 @@ export default async function TeacherMyClassesPage() {
           </div>
         )}
 
-        {/* Page Title */}
-        <div className="border-b border-[#E9E4D9] pb-4 mb-6 flex items-center justify-between">
-          <div>
-            <span className="text-xs font-mono font-medium uppercase tracking-wider text-[#3F4E40] block">
-              Teaching Schedule & Access
-            </span>
-            <h1 className="mt-1 text-2xl font-serif font-bold text-[#2C2825] tracking-tight">
-              My Classes
-            </h1>
-          </div>
-          <span className="text-xs font-mono text-[#6B645D] bg-[#F4F0E6] px-2.5 py-1 rounded border border-[#E9E4D9]">
-            {assignedClasses.length} {assignedClasses.length === 1 ? 'Class Assigned' : 'Classes Assigned'}
-          </span>
-        </div>
-
-        {/* Classes Table */}
-        <div className="border border-[#E9E4D9] bg-[#FFFFFF] rounded-sm">
-          <div className="px-5 py-3 border-b border-[#E9E4D9] bg-[#FAF8F3] flex items-center justify-between">
-            <span className="text-xs font-mono font-semibold uppercase tracking-wider text-[#47423D]">
-              Assigned Classes & Subjects
-            </span>
-            <span className="text-[11px] font-mono text-[#6B645D]">
-              Scoped to {session.school_name || 'Current School'}
-            </span>
-          </div>
-
-          {assignedClasses.length === 0 ? (
-            <div className="p-10 text-center text-xs text-[#6B645D]">
-              <BookOpen className="w-8 h-8 text-[#B8B0A5] mx-auto mb-2" />
-              <p className="font-medium text-[#47423D]">No teaching classes assigned yet.</p>
-              <p className="mt-1">Class and subject assignments are managed by the platform administrator.</p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs text-left">
-                <thead>
-                  <tr className="border-b border-[#E9E4D9] bg-[#FAF8F3] text-[#6B645D] font-mono text-[11px]">
-                    <th className="py-3 px-5 font-medium">Class Name</th>
-                    <th className="py-3 px-5 font-medium">Assigned Subject(s)</th>
-                    <th className="py-3 px-5 font-medium text-center">Enrolled Students</th>
-                    <th className="py-3 px-5 font-medium text-right">Access Status</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[#F4F0E6]">
-                  {assignedClasses.map((cls) => (
-                    <tr key={cls.id} className="hover:bg-[#FAF8F3] transition-colors">
-                      <td className="py-3.5 px-5 font-semibold text-[#2C2825]">
-                        {cls.name}
-                      </td>
-                      <td className="py-3.5 px-5">
-                        <div className="flex flex-wrap gap-1.5">
-                          {cls.subjects.map((subj) => (
-                            <span
-                              key={subj.id}
-                              className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-mono bg-[#E5EDE5] text-[#3F4E40] border border-[#D3DDD3]"
-                            >
-                              {subj.name} {subj.code ? `(${subj.code})` : ''}
-                            </span>
-                          ))}
-                        </div>
-                      </td>
-                      <td className="py-3.5 px-5 text-center font-mono">
-                        <span className="inline-flex items-center gap-1 text-[#47423D]">
-                          <Users className="w-3.5 h-3.5 text-[#6B645D]" />
-                          {cls.studentCount}
-                        </span>
-                      </td>
-                      <td className="py-3.5 px-5 text-right font-mono text-[11px]">
-                        <span className="text-[#3F4E40] font-medium">Authorized</span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
+        {/* Main Workspace */}
+        <TeacherMyClassesClient
+          assignedClasses={assignedClasses}
+          schoolName={session.school_name || undefined}
+          userName={session.name}
+          userRole={session.role}
+        />
       </main>
 
       {/* Footer */}

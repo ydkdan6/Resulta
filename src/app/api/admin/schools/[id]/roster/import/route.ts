@@ -218,11 +218,31 @@ export async function POST(
           }
         }
 
-        // 4. Record Import History (no student names logged)
+        // 4. Resolve user_id safely (prevent FK failure if session ID is stale after DB re-seed)
+        let resolvedUserId: string | null = null;
+        if (session.id) {
+          const userRec = await (tx as any).user?.findUnique?.({
+            where: { id: session.id },
+            select: { id: true },
+          });
+          if (userRec) {
+            resolvedUserId = userRec.id;
+          } else if (session.email) {
+            const userByEmail = await (tx as any).user?.findUnique?.({
+              where: { email: session.email.toLowerCase().trim() },
+              select: { id: true },
+            });
+            if (userByEmail) {
+              resolvedUserId = userByEmail.id;
+            }
+          }
+        }
+
+        // 5. Record Import History (no student names logged)
         const importRecord = await (tx as any).studentImport?.create?.({
           data: {
             school_id: schoolId,
-            user_id: session.id,
+            user_id: resolvedUserId,
             file_name: fileName,
             new_count: newImported,
             updated_count: updatedImported,
@@ -232,11 +252,11 @@ export async function POST(
           },
         });
 
-        // 5. Audit Log (no student names logged)
+        // 6. Audit Log (no student names logged)
         await tx.auditLog.create({
           data: {
             school_id: schoolId,
-            user_id: session.id,
+            user_id: resolvedUserId,
             action: "ROSTER_IMPORT",
             entity: "Student",
             new_values: {

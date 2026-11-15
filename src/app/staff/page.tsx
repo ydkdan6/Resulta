@@ -105,6 +105,12 @@ export default async function SchoolAdminPortalPage() {
         <StaffPortalClient
           schoolName={school.name}
           classes={school.classes.map((c) => ({ id: c.id, name: c.name }))}
+          schoolClassesWithSubjects={school.classes.map((c) => ({
+            id: c.id,
+            name: c.name,
+            studentCount: c._count.students,
+            subjects: school.subjects.map((s) => ({ id: s.id, name: s.name, code: s.code })),
+          }))}
           overviewContent={
             <>
               {/* Page Header */}

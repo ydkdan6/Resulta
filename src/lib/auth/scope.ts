@@ -120,6 +120,34 @@ export async function verifyTeacherClassAccess(
 }
 
 /**
+ * Enforces teacher class and subject assignment restrictions.
+ * Verifies that a teacher is explicitly assigned to the requested class and subject.
+ * Throws 403 Forbidden if not assigned.
+ */
+export async function verifyTeacherAssignment(
+  teacherId: string,
+  schoolId: string,
+  classId: string,
+  subjectId: string
+): Promise<boolean> {
+  const assignment = await prisma.teacherAssignment.findFirst({
+    where: {
+      school_id: schoolId,
+      teacher_id: teacherId,
+      class_id: classId,
+      subject_id: subjectId,
+    },
+    select: { id: true },
+  });
+
+  if (!assignment) {
+    throw new AuthError('Access denied: You are not assigned to this subject in this class.', 403);
+  }
+
+  return true;
+}
+
+/**
  * Retrieves only the classes assigned to a specific teacher within their school.
  * Guarantees a teacher cannot see unassigned classes.
  */
