@@ -12,7 +12,7 @@
     "seed": "node --import tsx scripts/assert-dev-db.ts && npx prisma db seed",
     "db:migrate": "node --import tsx scripts/assert-dev-db.ts && npx prisma migrate dev",
     "db:push": "node --import tsx scripts/assert-dev-db.ts && npx prisma db push",
-    "test": "node --import tsx --test --test-concurrency=1 tests/config.test.ts tests/pin.test.ts tests/security.test.ts tests/unit/grading.test.ts tests/grading-scheme.test.ts tests/unit/roster-parser.test.ts tests/admin-roster.test.ts tests/staff-roster.test.ts tests/teacher-scores.test.ts"
+    "test": "node --import tsx --test --test-concurrency=1 tests/config.test.ts tests/pin.test.ts tests/security.test.ts tests/unit/grading.test.ts tests/grading-scheme.test.ts tests/unit/roster-parser.test.ts tests/admin-roster.test.ts tests/staff-roster.test.ts tests/teacher-scores.test.ts tests/payment.test.ts"
   },
   "prisma": {
     "seed": "node --import tsx prisma/seed.ts"

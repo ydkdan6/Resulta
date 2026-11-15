@@ -84,7 +84,60 @@ export default function AdminDashboardClient({
   initialTeachers,
 }: Props) {
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<"schools" | "create-school" | "create-admin" | "create-teacher" | "assign-teacher" | "grading-schemes" | "student-roster">("schools");
+  const [activeTab, setActiveTab] = useState<"schools" | "create-school" | "create-admin" | "create-teacher" | "assign-teacher" | "grading-schemes" | "student-roster" | "payment-batches">("schools");
+
+  // Payment Batches states
+  const [adminBatches, setAdminBatches] = useState<{
+    id: string;
+    school_id: string;
+    students_count: number;
+    amount_due: string | number;
+    amount_received: string | number;
+    status: "PENDING" | "CONFIRMED" | "REJECTED";
+    created_at: string;
+    confirmed_at: string | null;
+    school: { id: string; name: string; slug: string; platform_share: string | number };
+    term: { id: string; session: string; term_number: number };
+    confirmer: { name: string; email: string } | null;
+  }[]>([]);
+  const [loadingBatches, setLoadingBatches] = useState(false);
+  const [confirmingBatchId, setConfirmingBatchId] = useState<string | null>(null);
+
+  const loadAdminBatches = async () => {
+    try {
+      setLoadingBatches(true);
+      const res = await fetch("/api/admin/payment-batches");
+      if (res.ok) {
+        const data = await res.json();
+        setAdminBatches(data.batches || []);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoadingBatches(false);
+    }
+  };
+
+  const handleConfirmBatch = async (batchId: string) => {
+    try {
+      setConfirmingBatchId(batchId);
+      const res = await fetch(`/api/admin/payment-batches/${batchId}/confirm`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setMessage({ type: "error", text: data.error || "Failed to confirm batch." });
+      } else {
+        setMessage({ type: "success", text: "Payment batch confirmed. PIN generation is now unlocked for students in this batch." });
+        await loadAdminBatches();
+      }
+    } catch (e: unknown) {
+      setMessage({ type: "error", text: (e as Error).message });
+    } finally {
+      setConfirmingBatchId(null);
+    }
+  };
 
   // Grading Scheme states
   const [selectedSchoolForScheme, setSelectedSchoolForScheme] = useState<string>("");
@@ -509,6 +562,20 @@ export default function AdminDashboardClient({
               }`}
             >
               Student Roster
+            </button>
+            <button
+              onClick={() => {
+                setActiveTab("payment-batches");
+                setMessage(null);
+                loadAdminBatches();
+              }}
+              className={`px-4 py-2.5 text-xs font-mono font-medium transition-colors border-b-2 cursor-pointer ${
+                activeTab === "payment-batches"
+                  ? "border-[#671B24] text-[#671B24]"
+                  : "border-transparent text-[#6B645D] hover:text-[#2C2825]"
+              }`}
+            >
+              Payment Batches
             </button>
           </div>
         </div>
@@ -1347,6 +1414,100 @@ export default function AdminDashboardClient({
         {/* TAB 7: Student Roster */}
         {activeTab === "student-roster" && (
           <RosterManager schools={initialSchools} />
+        )}
+
+        {/* TAB 8: Payment Batches */}
+        {activeTab === "payment-batches" && (
+          <div className="bg-[#FFFFFF] border border-[#E9E4D9] rounded-sm p-6 space-y-6">
+            <div className="flex items-center justify-between border-b border-[#E9E4D9] pb-4">
+              <div>
+                <h3 className="text-lg font-serif text-[#2C2825]">School Payment Batches</h3>
+                <p className="text-xs font-mono text-[#6B645D] mt-1">
+                  Record payments received from schools and confirm batches to approve PIN generation.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={loadAdminBatches}
+                disabled={loadingBatches}
+                className="px-3 py-1.5 bg-[#FAF8F3] hover:bg-[#F0ECE1] border border-[#D1CCC2] text-xs font-mono text-[#2C2825] rounded-sm"
+              >
+                {loadingBatches ? "Refreshing..." : "Refresh Batches"}
+              </button>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs font-mono">
+                <thead className="bg-[#FAF8F3] border-b border-[#E9E4D9] text-[#6B645D]">
+                  <tr>
+                    <th className="py-2.5 px-3">Date</th>
+                    <th className="py-2.5 px-3">School</th>
+                    <th className="py-2.5 px-3">Term</th>
+                    <th className="py-2.5 px-3">Students</th>
+                    <th className="py-2.5 px-3">Amount Due</th>
+                    <th className="py-2.5 px-3">Status</th>
+                    <th className="py-2.5 px-3 text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#E9E4D9]">
+                  {adminBatches.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="py-8 text-center text-[#6B645D]">
+                        {loadingBatches ? "Loading payment batches..." : "No payment batches found."}
+                      </td>
+                    </tr>
+                  ) : (
+                    adminBatches.map((b) => (
+                      <tr key={b.id} className="hover:bg-[#FAF8F3]">
+                        <td className="py-2.5 px-3 text-[#6B645D]">
+                          {new Date(b.created_at).toLocaleDateString()}
+                        </td>
+                        <td className="py-2.5 px-3 font-semibold text-[#2C2825]">
+                          {b.school.name}
+                        </td>
+                        <td className="py-2.5 px-3 text-[#6B645D]">
+                          Term {b.term.term_number} ({b.term.session})
+                        </td>
+                        <td className="py-2.5 px-3 font-semibold text-[#2C2825]">
+                          {b.students_count}
+                        </td>
+                        <td className="py-2.5 px-3 font-semibold text-[#2C2825]">
+                          ₦{Number(b.amount_due).toLocaleString()}
+                        </td>
+                        <td className="py-2.5 px-3">
+                          {b.status === "CONFIRMED" ? (
+                            <span className="inline-flex items-center gap-1 text-[#3F4E40] font-medium bg-[#F2F6F3] px-2 py-0.5 rounded-sm border border-[#BACBBF]">
+                              Confirmed
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 text-[#91660A] font-medium bg-[#FFF8E7] px-2 py-0.5 rounded-sm border border-[#F0D59A]">
+                              Pending Review
+                            </span>
+                          )}
+                        </td>
+                        <td className="py-2.5 px-3 text-right">
+                          {b.status === "PENDING" ? (
+                            <button
+                              type="button"
+                              disabled={confirmingBatchId === b.id}
+                              onClick={() => handleConfirmBatch(b.id)}
+                              className="px-3 py-1 bg-[#3F4E40] hover:bg-[#344035] text-white text-[11px] font-mono rounded-sm disabled:opacity-40"
+                            >
+                              {confirmingBatchId === b.id ? "Confirming..." : "Confirm Payment"}
+                            </button>
+                          ) : (
+                            <span className="text-[11px] text-[#6B645D]">
+                              Confirmed by {b.confirmer?.name || "Admin"}
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
         )}
       </main>
 

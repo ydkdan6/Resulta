@@ -3,6 +3,7 @@
 import { useState } from "react";
 import SchoolAdminRosterClient, { ClassItem } from "./SchoolAdminRosterClient";
 import ScoreEntryClient, { AssignedClass } from "./my-classes/ScoreEntryClient";
+import PaymentsClient from "./PaymentsClient";
 
 interface Props {
   classes: ClassItem[];
@@ -17,7 +18,7 @@ export default function StaffPortalClient({
   schoolName,
   overviewContent,
 }: Props) {
-  const [activeTab, setActiveTab] = useState<"overview" | "roster" | "scores">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "roster" | "scores" | "payments">("overview");
 
   return (
     <div>
@@ -56,6 +57,17 @@ export default function StaffPortalClient({
         >
           Scores & Results
         </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab("payments")}
+          className={`px-4 py-2.5 text-xs font-mono font-medium transition-colors border-b-2 cursor-pointer ${
+            activeTab === "payments"
+              ? "border-[#3F4E40] text-[#3F4E40] font-semibold"
+              : "border-transparent text-[#6B645D] hover:text-[#2C2825]"
+          }`}
+        >
+          Payments & Billing
+        </button>
       </div>
 
       {activeTab === "overview" && overviewContent}
@@ -68,6 +80,9 @@ export default function StaffPortalClient({
           currentUserRole="school_admin"
           schoolName={schoolName}
         />
+      )}
+      {activeTab === "payments" && (
+        <PaymentsClient schoolName={schoolName} />
       )}
     </div>
   );
