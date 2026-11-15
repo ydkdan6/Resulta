@@ -38,7 +38,7 @@ export async function GET(request: NextRequest) {
       ];
     }
 
-    const [students, total] = await Promise.all([
+    const [students, total, school] = await Promise.all([
       prisma.student.findMany({
         where,
         skip,
@@ -50,13 +50,60 @@ export async function GET(request: NextRequest) {
           full_name: true,
           status: true,
           class_id: true,
+          not_in_latest_upload: true,
           updated_at: true,
+          class: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
         },
       }),
       prisma.student.count({ where }),
+      prisma.school.findUnique({
+        where: { id: school_id },
+        select: {
+          roster_confirmed_at: true,
+          roster_confirmed_count: true,
+        },
+      }),
     ]);
 
-    return NextResponse.json({ students, total, page, pageSize });
+    let changed_since_confirmed = false;
+    if (school?.roster_confirmed_at) {
+      const currentActiveCount = await prisma.student.count({
+        where: { school_id, status: "ACTIVE" },
+      });
+
+      if (currentActiveCount !== school.roster_confirmed_count) {
+        changed_since_confirmed = true;
+      } else {
+        const studentModifiedAfter = await prisma.student.findFirst({
+          where: {
+            school_id,
+            OR: [
+              { created_at: { gt: school.roster_confirmed_at } },
+              { updated_at: { gt: school.roster_confirmed_at } },
+            ],
+          },
+          select: { id: true },
+        });
+        if (studentModifiedAfter) {
+          changed_since_confirmed = true;
+        }
+      }
+    }
+
+    return NextResponse.json({
+      students,
+      total,
+      page,
+      pageSize,
+      roster_confirmed_at: school?.roster_confirmed_at ?? null,
+      roster_confirmed_count: school?.roster_confirmed_count ?? null,
+      changed_since_confirmed,
+    });
   } catch (e: unknown) {
     if (e instanceof AuthError) {
       return NextResponse.json({ error: e.message }, { status: e.statusCode });

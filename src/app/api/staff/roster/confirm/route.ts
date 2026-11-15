@@ -25,7 +25,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Confirmation flag required." }, { status: 400 });
     }
 
-    const studentCount = await prisma.student.count({ where: { school_id } });
+    const studentCount = await prisma.student.count({
+      where: { school_id, status: "ACTIVE" },
+    });
 
     const updated = await prisma.school.update({
       where: { id: school_id },
