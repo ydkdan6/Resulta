@@ -30,7 +30,24 @@ export async function middleware(request: NextRequest) {
   // ------------------------------------------------------------
   // 2️⃣ Prepare request headers – remove any spoofed values
   // ------------------------------------------------------------
+    // ------------------------------------------------------------
+  // 2️⃣ Prepare request headers – remove any spoofed values
+  // ------------------------------------------------------------
   const requestHeaders = new Headers(request.headers);
+  // Delete any spoofed security headers coming from the client
+  requestHeaders.delete('x-portal-type');
+  requestHeaders.delete('x-school-slug');
+  requestHeaders.delete('x-user-id');
+  requestHeaders.delete('x-user-role');
+  requestHeaders.delete('x-user-school-id');
+
+  // Delete any spoofed security headers coming from the client
+  requestHeaders.delete('x-portal-type');
+  requestHeaders.delete('x-school-slug');
+  requestHeaders.delete('x-user-id');
+  requestHeaders.delete('x-user-role');
+  requestHeaders.delete('x-user-school-id');
+
   requestHeaders.delete('x-portal-type');
   requestHeaders.delete('x-school-slug');
 

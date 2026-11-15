@@ -9,7 +9,7 @@
     "start": "next start",
     "lint": "eslint",
     "db:seed": "npx prisma db seed",
-    "test": "node --import tsx --test --test-concurrency=1 tests/config.test.ts tests/pin.test.ts tests/auth-isolation.test.ts"
+        "test": "node --import tsx --test --test-concurrency=1 tests/config.test.ts tests/pin.test.ts tests/auth-isolation.test.ts tests/security.test.ts tests/school-api.test.ts"
   },
   "prisma": {
     "seed": "node --import tsx prisma/seed.ts"
