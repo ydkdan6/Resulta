@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireAuth, requireSchoolAccess, verifyTeacherClassAccess, AuthError } from '@/lib/auth/scope';
+import { requireAuth, verifyTeacherClassAccess, AuthError } from '@/lib/auth/scope';
 import { prisma } from '@/lib/prisma';
 
 export async function GET(
@@ -36,8 +36,11 @@ export async function GET(
       return NextResponse.json({ error: 'Class not found.' }, { status: 404 });
     }
 
-    // Tenant Isolation Check: School A cannot read School B data
-    requireSchoolAccess(session, classObj.school_id);
+    // Tenant Isolation Check: ensure class belongs to user's school
+    if (session.school_id !== classObj.school_id) {
+      // Return 404 for cross-tenant access
+      return NextResponse.json({ error: 'Class not found.' }, { status: 404 });
+    }
 
     // Teacher Restriction Check: A teacher cannot see classes they are not assigned to
     if (session.role === 'teacher') {

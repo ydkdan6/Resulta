@@ -1,67 +1,135 @@
-import { test, describe } from 'node:test';
-import assert from 'node:assert/strict';
-import { NextRequest } from 'next/server';
-import { middleware } from '../src/middleware.ts';
+import { test, describe } from "node:test";
+import assert from "node:assert/strict";
+import { NextRequest } from "next/server";
+import { middleware } from "../src/middleware.ts";
+import {
+  createSessionToken,
+  SESSION_COOKIE_NAME,
+} from "../src/lib/auth/session.ts";
 
-/** Helper to construct a NextRequest with optional host, headers, and cookies */
-function createRequest(path: string, options?: { host?: string; headers?: Record<string, string>; cookies?: string }) {
-  const url = new URL(`http://${options?.host ?? 'example.com'}${path}`);
-  const init: RequestInit = {};
-  if (options?.headers) {
-    init.headers = new Headers(options.headers);
-  }
-  if (options?.cookies) {
-    init.headers = init.headers ?? new Headers();
-    (init.headers as Headers).set('cookie', options.cookies);
-  }
-  return new NextRequest(url, init);
+const RESULTS_HOST = "schoola.localhost";
+const STAFF_HOST_A = "schoola-staff.localhost";
+const STAFF_HOST_B = "schoolb-staff.localhost";
+const MAIN_HOST = "localhost";
+
+function req(
+  path: string,
+  host: string,
+  opts: {
+    headers?: Record<string, string>;
+    token?: string;
+    method?: string;
+  } = {},
+) {
+  const headers = new Headers(opts.headers ?? {});
+  if (opts.token) headers.set("cookie", `${SESSION_COOKIE_NAME}=${opts.token}`);
+  return new NextRequest(new URL(`http://${host}${path}`), {
+    method: opts.method ?? "GET",
+    headers,
+  });
 }
 
-describe('Security tests', () => {
-  // 1. School A staff cannot read or change School B data through any staff or admin API
-  test('School A staff cannot access School B admin API', async () => {
-    // Host is schoolA-staff, request an admin endpoint (should be redirected to login)
-    const req = createRequest('/api/admin/schools', { host: 'schoolA-staff.localhost' });
-    const res = await middleware(req);
-    // Middleware redirects unauthenticated staff to /staff/login (status 307) – treat as blocked
-    assert.ok([307, 403, 404].includes(res.status), `Unexpected status ${res.status}`);
+// Adjust the field names below if createSessionToken expects different ones.
+async function tokenFor(
+  role: string,
+  slug: string | null,
+  schoolId: string | null,
+) {
+  return createSessionToken({
+    id: `test-${role}`,
+    email: `${role}@test.local`,
+    name: role,
+    role,
+    school_id: schoolId,
+    school_slug: slug,
+  } as any);
+}
+
+describe("Security tests (middleware)", () => {
+  test("Results address serves no admin or staff pages or APIs (404)", async () => {
+    const platformToken = await tokenFor("platform_admin", null, null);
+    const paths = [
+      "/admin",
+      "/admin/login",
+      "/staff",
+      "/staff/login",
+      "/api/admin/schools",
+      "/api/staff/my-classes",
+    ];
+    for (const path of paths) {
+      for (const token of [undefined, platformToken]) {
+        const res = await middleware(req(path, RESULTS_HOST, { token }));
+        assert.strictEqual(
+          res.status,
+          404,
+          `${path} on results address (token: ${token ? "yes" : "no"})`,
+        );
+      }
+    }
   });
 
-  // 2. Teacher cannot see classes or subjects they are not assigned to.
-  test('Teacher cannot view unassigned class', async () => {
-    const req = createRequest('/api/staff/classes/9999', { host: 'schoolA.localhost' });
-    const res = await middleware(req);
-    // No session -> redirect to staff login (307). If session existed but unauthorized, 403.
-    assert.ok([307, 403, 404].includes(res.status), `Unexpected status ${res.status}`);
+  test("Results address root is served (PIN login page)", async () => {
+    const res = await middleware(req("/", RESULTS_HOST));
+    assert.notStrictEqual(res.status, 404);
   });
 
-  // 3. Results address serves only the PIN login. Admin, staff and staff API routes return 404 there.
-  test('Results portal blocks admin API routes', async () => {
-    const req = createRequest('/api/admin/schools', { host: 'schoolA.localhost' });
-    const res = await middleware(req);
-    // Results portal should treat any /api/* as not allowed – return 404
-    assert.strictEqual(res.status, 404);
+  test("Unauthenticated protected APIs return 401 on staff and main addresses", async () => {
+    const cases: Array<[string, string]> = [
+      ["/api/admin/schools", STAFF_HOST_A],
+      ["/api/staff/my-classes", STAFF_HOST_A],
+      ["/api/staff/classes/123", STAFF_HOST_A],
+      ["/api/admin/schools", MAIN_HOST],
+    ];
+    for (const [path, host] of cases) {
+      const res = await middleware(req(path, host));
+      assert.strictEqual(res.status, 401, `${path} on ${host}`);
+    }
   });
 
-  // 4. Fake x-portal-type or x-school-slug headers are ignored.
-  test('Fake headers do not grant extra access', async () => {
-    const req = createRequest('/api/admin/schools', {
-      host: 'schoolA.localhost',
-      headers: { 'x-portal-type': 'staff', 'x-school-slug': 'schoolB' },
-    });
-    const res = await middleware(req);
-    // Still should be blocked – 404 for results portal or redirect (307) for unauthenticated.
-    assert.ok([307, 404].includes(res.status), `Unexpected status ${res.status}`);
+  test("Forged identity and portal headers give no access", async () => {
+    const forged = {
+      "x-portal-type": "staff",
+      "x-school-slug": "schoolb",
+      "x-user-id": "someone",
+      "x-user-role": "platform_admin",
+      "x-user-school-id": "school-b-id",
+    };
+    for (const [path, host] of [
+      ["/api/admin/schools", MAIN_HOST],
+      ["/api/staff/my-classes", STAFF_HOST_A],
+    ] as Array<[string, string]>) {
+      const res = await middleware(req(path, host, { headers: forged }));
+      assert.strictEqual(res.status, 401, `${path} with forged headers`);
+    }
   });
 
-  // 5. Unauthenticated requests to every admin and staff API return 401 (or redirect).
-  test('Unauthenticated admin and staff API requests are rejected', async () => {
-    const adminReq = createRequest('/api/admin/schools', { host: 'schoolA.localhost' });
-    const staffReq = createRequest('/api/staff/classes', { host: 'schoolA-staff.localhost' });
-    const adminRes = await middleware(adminReq);
-    const staffRes = await middleware(staffReq);
-    // Middleware redirects to login pages – status 307
-    assert.strictEqual(adminRes.status, 307);
-    assert.strictEqual(staffRes.status, 307);
+  test("Staff of school A cannot use school B staff pages (403)", async () => {
+    const teacherA = await tokenFor("teacher", "schoola", "school-a-id");
+    const res = await middleware(
+      req("/staff/my-classes", STAFF_HOST_B, { token: teacherA }),
+    );
+    assert.strictEqual(res.status, 403);
+  });
+
+  test("Teacher is limited to the My Classes pages (403 elsewhere)", async () => {
+    const teacherA = await tokenFor("teacher", "schoola", "school-a-id");
+    const blocked = await middleware(
+      req("/staff", STAFF_HOST_A, { token: teacherA }),
+    );
+    assert.strictEqual(blocked.status, 403);
+    const allowed = await middleware(
+      req("/staff/my-classes", STAFF_HOST_A, { token: teacherA }),
+    );
+    assert.notStrictEqual(allowed.status, 403);
+  });
+
+  test("School admin cannot create teachers or assignments (403)", async () => {
+    const adminA = await tokenFor("school_admin", "schoola", "school-a-id");
+    for (const method of ["POST", "PUT", "DELETE"]) {
+      const res = await middleware(
+        req("/api/staff/teachers", STAFF_HOST_A, { token: adminA, method }),
+      );
+      assert.strictEqual(res.status, 403, method);
+    }
   });
 });
