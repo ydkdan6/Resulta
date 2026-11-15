@@ -16,8 +16,10 @@ import {
   Check,
   Scale,
   Trash2,
-  X
+  X,
+  Users
 } from "lucide-react";
+import RosterManager from "./RosterManager";
 
 interface SchoolData {
   id: string;
@@ -28,6 +30,8 @@ interface SchoolData {
   subjects: { id: string; name: string; code: string | null }[];
   users: { id: string; name: string; email: string; role: string }[];
   _count: { classes: number; subjects: number; students: number };
+  roster_confirmed_at?: string | Date | null;
+  roster_confirmed_count?: number | null;
 }
 
 interface TeacherData {
@@ -80,7 +84,7 @@ export default function AdminDashboardClient({
   initialTeachers,
 }: Props) {
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<"schools" | "create-school" | "create-admin" | "create-teacher" | "assign-teacher" | "grading-schemes">("schools");
+  const [activeTab, setActiveTab] = useState<"schools" | "create-school" | "create-admin" | "create-teacher" | "assign-teacher" | "grading-schemes" | "student-roster">("schools");
 
   // Grading Scheme states
   const [selectedSchoolForScheme, setSelectedSchoolForScheme] = useState<string>("");
@@ -492,6 +496,19 @@ export default function AdminDashboardClient({
               }`}
             >
               Grading Schemes
+            </button>
+            <button
+              onClick={() => {
+                setActiveTab("student-roster");
+                setMessage(null);
+              }}
+              className={`px-4 py-2.5 text-xs font-mono font-medium transition-colors border-b-2 cursor-pointer ${
+                activeTab === "student-roster"
+                  ? "border-[#671B24] text-[#671B24]"
+                  : "border-transparent text-[#6B645D] hover:text-[#2C2825]"
+              }`}
+            >
+              Student Roster
             </button>
           </div>
         </div>
@@ -1325,6 +1342,11 @@ export default function AdminDashboardClient({
               </div>
             )}
           </div>
+        )}
+
+        {/* TAB 7: Student Roster */}
+        {activeTab === "student-roster" && (
+          <RosterManager schools={initialSchools} />
         )}
       </main>
 

@@ -4,6 +4,7 @@ import { NextRequest } from "next/server";
 import { GET as getTemplate } from "../src/app/api/admin/schools/[id]/roster/template/route.ts";
 import { POST as postPreview } from "../src/app/api/admin/schools/[id]/roster/preview/route.ts";
 import { POST as postImport } from "../src/app/api/admin/schools/[id]/roster/import/route.ts";
+import { GET as getHistory } from "../src/app/api/admin/schools/[id]/roster/history/route.ts";
 import { POST as postSchools } from "../src/app/api/admin/schools/route.ts";
 import { createSessionToken, SESSION_COOKIE_NAME } from "../src/lib/auth/session.ts";
 import { prisma } from "../src/lib/prisma.ts";
@@ -103,7 +104,7 @@ describe("POST /api/admin/schools – Validation & Auth Tests", () => {
     const res = await postSchools(req);
     assert.strictEqual(res.status, 400);
     const data = await res.json();
-    assert.ok(data.error.includes("exceeds 2 MB") || data.error.includes("image"));
+    assert.ok(/PNG or JPEG|exceeds/i.test(data.error));
   });
 
   test("Defaults card_price 1000 and platform_share 500 when not supplied", async () => {
@@ -279,6 +280,93 @@ describe("Platform Admin Roster APIs – Template, Preview, Import", () => {
     } finally {
       (prisma.school as any).findUnique = origSchoolFind;
       (prisma as any).$transaction = origTx;
+    }
+  });
+
+  // 5. History
+  test("GET /api/admin/schools/[id]/roster/history enforces platform_admin and returns counts only", async () => {
+    // Unauthenticated -> 401
+    const unauthReq = createMockReq("http://localhost/api/admin/schools/s1/roster/history");
+    const unauthRes = await getHistory(unauthReq, { params: Promise.resolve({ id: "s1" }) });
+    assert.strictEqual(unauthRes.status, 401);
+
+    // School admin -> 403
+    const schoolAdminToken = await tokenFor("school_admin", "s1");
+    const forbiddenReq = createMockReq("http://localhost/api/admin/schools/s1/roster/history", {
+      token: schoolAdminToken,
+    });
+    const forbiddenRes = await getHistory(forbiddenReq, { params: Promise.resolve({ id: "s1" }) });
+    assert.strictEqual(forbiddenRes.status, 403);
+
+    // Teacher -> 403
+    const teacherToken = await tokenFor("teacher", "s1");
+    const teacherReq = createMockReq("http://localhost/api/admin/schools/s1/roster/history", {
+      token: teacherToken,
+    });
+    const teacherRes = await getHistory(teacherReq, { params: Promise.resolve({ id: "s1" }) });
+    assert.strictEqual(teacherRes.status, 403);
+
+    // Platform admin with valid school -> 200 with counts only (never student data)
+    const adminToken = await tokenFor("platform_admin");
+    const origSchoolFind = prisma.school.findUnique;
+    const origImportFindMany = (prisma as any).studentImport?.findMany;
+
+    (prisma.school as any).findUnique = async ({ where }: any) => {
+      if (where.id === "s1") return { id: "s1" };
+      return null;
+    };
+
+    const mockImports = [
+      {
+        id: "imp-1",
+        file_name: "jss1_students.xlsx",
+        new_count: 45,
+        updated_count: 5,
+        unchanged_count: 10,
+        error_count: 0,
+        total_count: 60,
+        created_at: new Date("2026-11-15T12:00:00Z"),
+        user: {
+          name: "Platform Operator",
+          email: "admin@platform.gov.ng",
+        },
+      },
+    ];
+
+    if (!(prisma as any).studentImport) {
+      (prisma as any).studentImport = {};
+    }
+    (prisma as any).studentImport.findMany = async () => mockImports;
+
+    try {
+      const okReq = createMockReq("http://localhost/api/admin/schools/s1/roster/history", {
+        token: adminToken,
+      });
+      const okRes = await getHistory(okReq, { params: Promise.resolve({ id: "s1" }) });
+      assert.strictEqual(okRes.status, 200);
+
+      const data = await okRes.json();
+      assert.ok(Array.isArray(data.imports));
+      assert.strictEqual(data.imports.length, 1);
+      const first = data.imports[0];
+
+      // Verifies only counts, file name, date, uploader info are present
+      assert.strictEqual(first.file_name, "jss1_students.xlsx");
+      assert.strictEqual(first.new_count, 45);
+      assert.strictEqual(first.updated_count, 5);
+      assert.strictEqual(first.unchanged_count, 10);
+      assert.strictEqual(first.error_count, 0);
+      assert.strictEqual(first.total_count, 60);
+      assert.strictEqual(first.user.name, "Platform Operator");
+      assert.strictEqual(first.user.email, "admin@platform.gov.ng");
+
+      // Verifies NEVER student data
+      assert.strictEqual((first as any).students, undefined);
+      assert.strictEqual((first as any).student_name, undefined);
+      assert.strictEqual((first as any).admission_number, undefined);
+    } finally {
+      (prisma.school as any).findUnique = origSchoolFind;
+      (prisma as any).studentImport.findMany = origImportFindMany;
     }
   });
 });

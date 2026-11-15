@@ -72,6 +72,8 @@ export default async function PlatformAdminDashboardPage() {
     card_price: Number(s.card_price),
     platform_share: Number(s.platform_share),
     users: s.users.map((u) => ({ ...u, email: u.email ?? "" })),
+    roster_confirmed_at: s.roster_confirmed_at ? s.roster_confirmed_at.toISOString() : null,
+    roster_confirmed_count: s.roster_confirmed_count ?? null,
   }));
 
   const teacherList = teachers.map((t) => ({ ...t, email: t.email ?? "" }));
