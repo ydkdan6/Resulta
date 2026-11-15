@@ -332,9 +332,11 @@ describe("Payment Tracking & PIN Gating System", () => {
 
   test("8. PIN GATING: POST /api/staff/pins/generate FAILS (403) when no confirmed payment batch exists", async () => {
     const origTerm = prisma.term.findUnique;
+    const origSchool = prisma.school.findUnique;
     const origBatch = prisma.paymentBatch.findFirst;
 
     (prisma.term.findUnique as any) = async () => ({ id: "term-1", school_id: "school-1" });
+    (prisma.school.findUnique as any) = async () => ({ id: "school-1", name: "Grace High", slug: "grace-high" });
     // No confirmed batch!
     (prisma.paymentBatch.findFirst as any) = async () => null;
 
@@ -354,16 +356,19 @@ describe("Payment Tracking & PIN Gating System", () => {
       assert.match(data.error, /impossible without a confirmed payment batch/);
     } finally {
       prisma.term.findUnique = origTerm;
+      prisma.school.findUnique = origSchool;
       prisma.paymentBatch.findFirst = origBatch;
     }
   });
 
   test("9. PIN GATING: POST /api/staff/pins/generate FAILS (403) when student result is withheld", async () => {
     const origTerm = prisma.term.findUnique;
+    const origSchool = prisma.school.findUnique;
     const origBatch = prisma.paymentBatch.findFirst;
     const origStudents = prisma.student.findMany;
 
     (prisma.term.findUnique as any) = async () => ({ id: "term-1", school_id: "school-1" });
+    (prisma.school.findUnique as any) = async () => ({ id: "school-1", name: "Grace High", slug: "grace-high" });
     (prisma.paymentBatch.findFirst as any) = async () => ({
       id: "b-conf",
       status: "CONFIRMED",
@@ -395,6 +400,7 @@ describe("Payment Tracking & PIN Gating System", () => {
       assert.strictEqual(data.details[0].reason, "Result is withheld (locked) by administration.");
     } finally {
       prisma.term.findUnique = origTerm;
+      prisma.school.findUnique = origSchool;
       prisma.paymentBatch.findFirst = origBatch;
       prisma.student.findMany = origStudents;
     }
@@ -402,11 +408,18 @@ describe("Payment Tracking & PIN Gating System", () => {
 
   test("10. PIN GATING: POST /api/staff/pins/generate SUCCEEDS when batch is confirmed and fees are paid", async () => {
     const origTerm = prisma.term.findUnique;
+    const origSchool = prisma.school.findUnique;
     const origBatch = prisma.paymentBatch.findFirst;
     const origStudents = prisma.student.findMany;
     const origTx = prisma.$transaction;
 
-    (prisma.term.findUnique as any) = async () => ({ id: "term-1", school_id: "school-1" });
+    (prisma.term.findUnique as any) = async () => ({
+      id: "term-1",
+      school_id: "school-1",
+      session: "2026/2027",
+      term_number: 1,
+    });
+    (prisma.school.findUnique as any) = async () => ({ id: "school-1", name: "Grace High", slug: "grace-high" });
     (prisma.paymentBatch.findFirst as any) = async () => ({
       id: "b-conf",
       status: "CONFIRMED",
@@ -422,6 +435,9 @@ describe("Payment Tracking & PIN Gating System", () => {
     ];
     (prisma.$transaction as any) = async (cb: any) => {
       return cb({
+        term: {
+          findMany: async () => [],
+        },
         pin: {
           updateMany: async () => ({ count: 0 }),
           create: async () => ({}),
@@ -448,9 +464,10 @@ describe("Payment Tracking & PIN Gating System", () => {
       assert.strictEqual(data.success, true);
       assert.strictEqual(data.generated_count, 1);
       assert.strictEqual(data.pins.length, 1);
-      assert.match(data.pins[0].plain_pin, /^\d{6}$/);
+      assert.strictEqual(data.pins[0].plain_pin.length, 10);
     } finally {
       prisma.term.findUnique = origTerm;
+      prisma.school.findUnique = origSchool;
       prisma.paymentBatch.findFirst = origBatch;
       prisma.student.findMany = origStudents;
       prisma.$transaction = origTx;

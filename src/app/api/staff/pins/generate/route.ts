@@ -2,18 +2,22 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, AuthError } from '@/lib/auth/scope';
-import { generateSecurePin, hashPin } from '@/lib/auth/pin';
+import { generateRandomPin, hashPin } from '@/lib/auth/pin';
+import { generatePinCardsPdf, CardData } from '@/lib/cards/generatePdf';
+import { platformConfig } from '@/lib/config';
 
 /**
  * POST /api/staff/pins/generate
- * Generates PIN cards for students in a term.
+ * Generates PINs and creates a print-ready PDF for a confirmed batch.
  *
- * GATING CRITERIA:
- * 1. Student must belong to this school and be ACTIVE.
- * 2. Student must have fees_paid = true in StudentTermStatus for this term.
- * 3. The student's result must NOT be locked (result_locked === false).
- * 4. CRITICAL GATE: There must be at least one CONFIRMED PaymentBatch for this school and term!
- *    PIN generation is impossible for students outside a confirmed batch.
+ * Rules:
+ * - When school_admin clicks 'Generate cards' for a confirmed batch, create a random
+ *   10-character PIN per student (no look-alike characters).
+ * - Store only a hash (bcrypt) and return the plain PINs once in the response.
+ * - If format=pdf or pdf: true requested, returns the print-ready PDF binary.
+ * - Generating a new term's PINs expires the previous term's PINs.
+ * - Defaults: max_logins 10 per PIN.
+ * - PIN is strictly for one student and one term.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -27,16 +31,16 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { termId, studentIds } = body || {};
+    const { termId, studentIds, batchId, returnPdf } = body || {};
 
-    if (!termId || !Array.isArray(studentIds) || studentIds.length === 0) {
+    if (!termId) {
       return NextResponse.json(
-        { error: 'termId and non-empty studentIds array are required.' },
+        { error: 'termId is required.' },
         { status: 400 }
       );
     }
 
-    // Verify term belongs to school
+    // 1. Verify term belongs to school
     const term = await prisma.term.findUnique({
       where: { id: termId },
       select: { id: true, school_id: true, session: true, term_number: true },
@@ -45,12 +49,22 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Term not found for your school.' }, { status: 404 });
     }
 
-    // CRITICAL GATE: Check if there is any CONFIRMED payment batch for this school and term
+    // 2. School details
+    const school = await prisma.school.findUnique({
+      where: { id: school_id },
+      select: { id: true, name: true, slug: true, logo_url: true },
+    });
+    if (!school) {
+      return NextResponse.json({ error: 'School not found.' }, { status: 404 });
+    }
+
+    // 3. CRITICAL GATE: Verify there is a CONFIRMED PaymentBatch for this school and term
     const confirmedBatch = await prisma.paymentBatch.findFirst({
       where: {
         school_id,
         term_id: termId,
         status: 'CONFIRMED',
+        ...(batchId ? { id: batchId } : {}),
       },
     });
 
@@ -64,10 +78,35 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check each student's payment status and result withholding status
-    const studentsWithStatus = await prisma.student.findMany({
+    // 4. Resolve target students
+    let targetStudentIds: string[] = [];
+    if (Array.isArray(studentIds) && studentIds.length > 0) {
+      targetStudentIds = studentIds;
+    } else {
+      // If batchId or all students for term, select students marked fees_paid = true
+      const paidStatuses = await prisma.studentTermStatus.findMany({
+        where: {
+          school_id,
+          term_id: termId,
+          fees_paid: true,
+          result_locked: false,
+        },
+        select: { student_id: true },
+      });
+      targetStudentIds = paidStatuses.map((s) => s.student_id);
+    }
+
+    if (targetStudentIds.length === 0) {
+      return NextResponse.json(
+        { error: 'No paid students found to generate PINs for.' },
+        { status: 400 }
+      );
+    }
+
+    // Fetch student objects with their class & term status
+    const students = await prisma.student.findMany({
       where: {
-        id: { in: studentIds },
+        id: { in: targetStudentIds },
         school_id,
       },
       select: {
@@ -75,6 +114,7 @@ export async function POST(request: NextRequest) {
         admission_number: true,
         full_name: true,
         status: true,
+        class: { select: { id: true, name: true } },
         termStatuses: {
           where: { term_id: termId },
           select: { fees_paid: true, result_locked: true },
@@ -82,18 +122,11 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    if (studentsWithStatus.length !== studentIds.length) {
-      return NextResponse.json(
-        { error: 'One or more students do not belong to this school.' },
-        { status: 400 }
-      );
-    }
-
-    // Validate eligibility for each student
+    // Validate eligibility
     const ineligibleStudents: { admission_number: string; reason: string }[] = [];
-    const eligibleStudents: typeof studentsWithStatus = [];
+    const eligibleStudents: typeof students = [];
 
-    for (const student of studentsWithStatus) {
+    for (const student of students) {
       const termStatus = student.termStatuses[0];
       if (!termStatus || !termStatus.fees_paid) {
         ineligibleStudents.push({
@@ -120,20 +153,54 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Generate PINs for eligible students
+    // 5. Generate 10-character PINs with safe characters & hash with bcrypt
     const generatedPins: {
       student_id: string;
       admission_number: string;
       full_name: string;
+      class_name: string;
       plain_pin: string;
     }[] = [];
 
+    const cardsForPdf: CardData[] = [];
+    const portalUrl = platformConfig.getSchoolResultsUrl(school.slug);
+
     await prisma.$transaction(async (tx) => {
+      // Rule: Generating a new term's PINs expires the previous term's PINs for these students
+      // Find all earlier terms for this school
+      const earlierTerms = await tx.term.findMany({
+        where: {
+          school_id,
+          id: { not: termId },
+          OR: [
+            { session: { lt: term.session } },
+            {
+              session: term.session,
+              term_number: { lt: term.term_number },
+            },
+          ],
+        },
+        select: { id: true },
+      });
+
+      const earlierTermIds = earlierTerms.map((t) => t.id);
+      if (earlierTermIds.length > 0) {
+        await tx.pin.updateMany({
+          where: {
+            school_id,
+            student_id: { in: eligibleStudents.map((s) => s.id) },
+            term_id: { in: earlierTermIds },
+            status: 'ACTIVE',
+          },
+          data: { status: 'EXPIRED' },
+        });
+      }
+
       for (const student of eligibleStudents) {
-        const plainPin = generateSecurePin(6);
+        const plainPin = generateRandomPin(10);
         const pinHash = hashPin(plainPin);
 
-        // Revoke any previous active PIN for this student + term
+        // Revoke any previous active PIN for this student in the same term
         await tx.pin.updateMany({
           where: {
             school_id,
@@ -144,26 +211,42 @@ export async function POST(request: NextRequest) {
           data: { status: 'REVOKED' },
         });
 
-        // Create new PIN
+        // Insert new PIN: max_logins defaults to 10
         await tx.pin.create({
           data: {
             school_id,
             student_id: student.id,
             term_id: termId,
             pin_hash: pinHash,
+            max_logins: 10,
+            logins_used: 0,
             status: 'ACTIVE',
           },
         });
 
+        const className = student.class?.name || 'General';
         generatedPins.push({
           student_id: student.id,
           admission_number: student.admission_number,
           full_name: student.full_name,
+          class_name: className,
           plain_pin: plainPin,
+        });
+
+        cardsForPdf.push({
+          schoolName: school.name,
+          logoUrl: school.logo_url,
+          studentName: student.full_name,
+          admissionNumber: student.admission_number,
+          className,
+          termName: `Term ${term.term_number}`,
+          session: term.session,
+          pin: plainPin,
+          portalUrl,
         });
       }
 
-      // Audit log
+      // Audit log: Note that plain PINs are NEVER written to logs!
       await tx.auditLog.create({
         data: {
           school_id,
@@ -175,10 +258,23 @@ export async function POST(request: NextRequest) {
             count: generatedPins.length,
             term_id: termId,
             batch_id: confirmedBatch.id,
+            // Do NOT log plain_pin
           },
         },
       });
     });
+
+    // If PDF output requested directly
+    if (returnPdf) {
+      const pdfBuffer = await generatePinCardsPdf(cardsForPdf);
+      return new NextResponse(new Uint8Array(pdfBuffer), {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/pdf',
+          'Content-Disposition': `attachment; filename="pin-cards-${school.slug}-term${term.term_number}.pdf"`,
+        },
+      });
+    }
 
     return NextResponse.json({
       success: true,
@@ -186,7 +282,7 @@ export async function POST(request: NextRequest) {
       ineligible_count: ineligibleStudents.length,
       ineligible: ineligibleStudents,
       pins: generatedPins,
-      message: `Successfully generated ${generatedPins.length} PINs. Store or print them now; plain PINs are never stored.`,
+      message: `Generated ${generatedPins.length} PINs successfully. Download your PDF now; plain PINs cannot be viewed again.`,
     });
   } catch (e: unknown) {
     if (e instanceof AuthError) {

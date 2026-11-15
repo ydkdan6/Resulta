@@ -1,10 +1,25 @@
 import crypto from 'node:crypto';
+import bcrypt from 'bcryptjs';
 
-const PIN_SECRET = process.env.PIN_HMAC_SECRET || 'dev-secret-key-resulta-pin-security-token';
+// Characters without look-alikes:
+// Excludes 0, O, o, 1, I, l, 8, B
+export const SAFE_PIN_CHARS = '2345679ACDEFGHJKLMNPQRSTUVWXYZ';
 
 /**
- * Generates a cryptographically secure numeric PIN.
- * Default length is 6 digits.
+ * Generates a random 10-character PIN per student with no look-alike characters.
+ */
+export function generateRandomPin(length = 10): string {
+  let result = '';
+  const charLength = SAFE_PIN_CHARS.length;
+  // Use crypto.randomInt for cryptographic randomness
+  for (let i = 0; i < length; i++) {
+    result += SAFE_PIN_CHARS[crypto.randomInt(0, charLength)];
+  }
+  return result;
+}
+
+/**
+ * Backward compatibility: generate numeric pin if needed
  */
 export function generateSecurePin(digits = 6): string {
   const min = Math.pow(10, digits - 1);
@@ -13,27 +28,18 @@ export function generateSecurePin(digits = 6): string {
 }
 
 /**
- * Creates a keyed HMAC-SHA-256 hash of a PIN using the secret key.
- * As required by BRIEF.md Rule 5, plain PINs and unkeyed hashes are never stored.
+ * Hash a PIN using bcrypt.
+ * Never stores plain PINs or reversible hashes.
  */
 export function hashPin(plainPin: string): string {
-  return crypto
-    .createHmac('sha256', PIN_SECRET)
-    .update(plainPin.trim())
-    .digest('hex');
+  const salt = bcrypt.genSaltSync(10);
+  return bcrypt.hashSync(plainPin.trim().toUpperCase(), salt);
 }
 
 /**
- * Secure constant-time comparison of a submitted PIN against a stored hash.
+ * Verify a plain PIN against a stored hash using bcrypt.
  */
 export function verifyPin(plainPin: string, storedHash: string): boolean {
-  const computedHash = hashPin(plainPin);
-  const computedBuffer = Buffer.from(computedHash, 'hex');
-  const storedBuffer = Buffer.from(storedHash, 'hex');
-
-  if (computedBuffer.length !== storedBuffer.length) {
-    return false;
-  }
-
-  return crypto.timingSafeEqual(computedBuffer, storedBuffer);
+  if (!plainPin || !storedHash) return false;
+  return bcrypt.compareSync(plainPin.trim().toUpperCase(), storedHash);
 }
