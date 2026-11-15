@@ -1,5 +1,6 @@
 import { getSession, SessionUser } from './session';
 import { prisma } from '../prisma';
+import type { NextRequest } from 'next/server';
 
 export class AuthError extends Error {
   statusCode: number;
@@ -15,8 +16,8 @@ export class AuthError extends Error {
  * Ensures the user has an active authenticated session.
  * Throws 401 if unauthenticated.
  */
-export async function requireAuth(providedSession?: SessionUser | null): Promise<SessionUser> {
-  const session = providedSession !== undefined ? providedSession : await getSession();
+export async function requireAuth(providedSession?: SessionUser | null, request?: NextRequest): Promise<SessionUser> {
+  const session = providedSession !== undefined ? providedSession : await getSession(request);
   if (!session) {
     throw new AuthError('Authentication required to access this resource.', 401);
   }

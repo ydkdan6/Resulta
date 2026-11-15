@@ -48,7 +48,7 @@ export async function POST(request: NextRequest) {
     // Create session token
     const token = await createSessionToken({
       id: user.id,
-      email: user.email,
+      email: user.email ?? "",
       name: user.name,
       role: user.role,
       school_id: user.school_id,

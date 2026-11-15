@@ -67,19 +67,21 @@ export default async function PlatformAdminDashboardPage() {
     }),
   ]);
 
-  // Convert Prisma Decimal objects to plain numbers for client compatibility
   const schools = schoolsRaw.map((s) => ({
     ...s,
     card_price: Number(s.card_price),
     platform_share: Number(s.platform_share),
+    users: s.users.map((u) => ({ ...u, email: u.email ?? "" })),
   }));
+
+  const teacherList = teachers.map((t) => ({ ...t, email: t.email ?? "" }));
 
   return (
     <AdminDashboardClient
       adminName={session.name}
       adminEmail={session.email}
       initialSchools={schools}
-      initialTeachers={teachers}
+      initialTeachers={teacherList}
     />
   );
 }

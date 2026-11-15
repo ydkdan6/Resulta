@@ -55,7 +55,7 @@ export async function POST(request: NextRequest) {
     // Update session cookie with must_change_password = false
     const token = await createSessionToken({
       id: updatedUser.id,
-      email: updatedUser.email,
+      email: updatedUser.email ?? "",
       name: updatedUser.name,
       role: updatedUser.role,
       school_id: updatedUser.school_id,

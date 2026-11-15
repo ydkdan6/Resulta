@@ -1,5 +1,6 @@
 import { SignJWT, jwtVerify } from 'jose';
 import { cookies } from 'next/headers';
+import type { NextRequest } from 'next/server';
 
 export interface SessionUser {
   id: string;
@@ -60,12 +61,14 @@ export async function verifySessionToken(token: string): Promise<SessionUser | n
 /**
  * Retrieves the current session user from Next.js request cookies.
  */
-export async function getSession(): Promise<SessionUser | null> {
+export async function getSession(request?: NextRequest): Promise<SessionUser | null> {
   // During static prerender there is no request cookie store; safely return null.
   try {
-    const cookieStore = await cookies();
-    // `cookieStore.get` may be undefined in non‑request contexts.
-    const token = (cookieStore as any).get?.(SESSION_COOKIE_NAME)?.value;
+    let token = request?.cookies.get(SESSION_COOKIE_NAME)?.value;
+    if (!token) {
+      const cookieStore = await cookies();
+      token = (cookieStore as any).get?.(SESSION_COOKIE_NAME)?.value;
+    }
     if (!token) return null;
     return verifySessionToken(token);
   } catch {

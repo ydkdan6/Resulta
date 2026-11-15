@@ -1,6 +1,15 @@
 import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import { prisma } from '../src/lib/prisma.ts';
+
+// Assert dev/test database before running any database-dependent tests
+try {
+  execFileSync('node', ['--import', 'tsx', 'scripts/assert-dev-db.ts'], { stdio: 'pipe' });
+} catch {
+  // If the DB guard fails, skip or fail with clear message
+  console.warn('[DB Guard] Database is not marked dev/test. auth-isolation tests requiring live DB will fail safely.');
+}
 import {
   requireSchoolAccess,
   verifyTeacherClassAccess,

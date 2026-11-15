@@ -13,7 +13,10 @@ import {
   CheckCircle2,
   AlertCircle,
   Copy,
-  Check
+  Check,
+  Scale,
+  Trash2,
+  X
 } from "lucide-react";
 
 interface SchoolData {
@@ -41,6 +44,28 @@ interface TeacherData {
   }[];
 }
 
+interface SchemePart {
+  name: string;
+  max: number;
+}
+
+interface SchemeBoundary {
+  grade: string;
+  min: number;
+  max: number;
+  remark: string;
+}
+
+interface GradingSchemeData {
+  id: string;
+  school_id: string;
+  class_level: string | null;
+  name: string;
+  parts: SchemePart[];
+  boundaries: SchemeBoundary[];
+  created_at: string;
+}
+
 interface Props {
   adminName: string;
   adminEmail: string;
@@ -55,7 +80,28 @@ export default function AdminDashboardClient({
   initialTeachers,
 }: Props) {
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<"schools" | "create-school" | "create-admin" | "create-teacher" | "assign-teacher">("schools");
+  const [activeTab, setActiveTab] = useState<"schools" | "create-school" | "create-admin" | "create-teacher" | "assign-teacher" | "grading-schemes">("schools");
+
+  // Grading Scheme states
+  const [selectedSchoolForScheme, setSelectedSchoolForScheme] = useState<string>("");
+  const [schemesList, setSchemesList] = useState<GradingSchemeData[]>([]);
+  const [loadingSchemes, setLoadingSchemes] = useState(false);
+  const [editingSchemeId, setEditingSchemeId] = useState<string | null>(null);
+  const [schemeName, setSchemeName] = useState("Standard WAEC");
+  const [schemeClassLevel, setSchemeClassLevel] = useState("");
+  const [schemeParts, setSchemeParts] = useState<SchemePart[]>([
+    { name: "CA1", max: 20 },
+    { name: "CA2", max: 20 },
+    { name: "Exam", max: 60 },
+  ]);
+  const [schemeBoundaries, setSchemeBoundaries] = useState<SchemeBoundary[]>([
+    { grade: "A", min: 70, max: 100, remark: "Excellent" },
+    { grade: "B", min: 60, max: 69, remark: "Very Good" },
+    { grade: "C", min: 50, max: 59, remark: "Credit" },
+    { grade: "D", min: 45, max: 49, remark: "Pass" },
+    { grade: "E", min: 40, max: 44, remark: "Fair" },
+    { grade: "F", min: 0, max: 39, remark: "Fail" },
+  ]);
 
   // Form states
   const [schoolName, setSchoolName] = useState("");
@@ -229,6 +275,122 @@ export default function AdminDashboardClient({
     }
   };
 
+  // 5. Grading Schemes fetch & save
+  const fetchSchemesForSchool = async (schoolId: string) => {
+    if (!schoolId) {
+      setSchemesList([]);
+      return;
+    }
+    setLoadingSchemes(true);
+    try {
+      const res = await fetch(`/api/admin/grading-scheme?schoolId=${schoolId}`);
+      if (!res.ok) throw new Error("Failed to load grading schemes.");
+      const data = await res.json();
+      setSchemesList(data);
+    } catch (err: unknown) {
+      setMessage({ text: err instanceof Error ? err.message : "Error", type: "error" });
+    } finally {
+      setLoadingSchemes(false);
+    }
+  };
+
+  const handleSelectSchemeSchool = (schoolId: string) => {
+    setSelectedSchoolForScheme(schoolId);
+    setEditingSchemeId(null);
+    fetchSchemesForSchool(schoolId);
+  };
+
+  const handleSaveScheme = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedSchoolForScheme) {
+      setMessage({ text: "Please select a school first.", type: "error" });
+      return;
+    }
+    // Client-side quick validation checks
+    const totalMax = schemeParts.reduce((s, p) => s + Number(p.max || 0), 0);
+    if (totalMax !== 100) {
+      setMessage({ text: `Part maximums must sum to 100. Current sum: ${totalMax}`, type: "error" });
+      return;
+    }
+    const partNames = schemeParts.map((p) => p.name.trim().toLowerCase());
+    if (new Set(partNames).size !== partNames.length) {
+      setMessage({ text: "Part names must be unique.", type: "error" });
+      return;
+    }
+
+    setLoading(true);
+    setMessage(null);
+
+    try {
+      const payload = {
+        school_id: selectedSchoolForScheme,
+        name: schemeName,
+        class_level: schemeClassLevel ? schemeClassLevel.trim() : undefined,
+        parts: schemeParts.map((p) => ({ name: p.name.trim(), max: Number(p.max) })),
+        boundaries: schemeBoundaries.map((b) => ({
+          grade: b.grade.trim(),
+          min: Number(b.min),
+          max: Number(b.max),
+          remark: b.remark.trim(),
+        })),
+      };
+
+      const url = editingSchemeId
+        ? `/api/admin/grading-scheme?id=${editingSchemeId}`
+        : "/api/admin/grading-scheme";
+      const method = editingSchemeId ? "PUT" : "POST";
+
+      const res = await fetch(url, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to save grading scheme.");
+      }
+
+      setMessage({
+        text: `Grading scheme "${data.name}" saved successfully.`,
+        type: "success",
+      });
+      setEditingSchemeId(null);
+      fetchSchemesForSchool(selectedSchoolForScheme);
+    } catch (err: unknown) {
+      setMessage({ text: err instanceof Error ? err.message : "Error", type: "error" });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleEditScheme = (scheme: GradingSchemeData) => {
+    setEditingSchemeId(scheme.id);
+    setSchemeName(scheme.name);
+    setSchemeClassLevel(scheme.class_level || "");
+    setSchemeParts(scheme.parts);
+    setSchemeBoundaries(scheme.boundaries);
+  };
+
+  const handleResetSchemeForm = () => {
+    setEditingSchemeId(null);
+    setSchemeName("Standard WAEC");
+    setSchemeClassLevel("");
+    setSchemeParts([
+      { name: "CA1", max: 20 },
+      { name: "CA2", max: 20 },
+      { name: "Exam", max: 60 },
+    ]);
+    setSchemeBoundaries([
+      { grade: "A", min: 70, max: 100, remark: "Excellent" },
+      { grade: "B", min: 60, max: 69, remark: "Very Good" },
+      { grade: "C", min: 50, max: 59, remark: "Credit" },
+      { grade: "D", min: 45, max: 49, remark: "Pass" },
+      { grade: "E", min: 40, max: 44, remark: "Fair" },
+      { grade: "F", min: 0, max: 39, remark: "Fail" },
+    ]);
+  };
+
   return (
     <div className="min-h-screen bg-[#FAF8F3] text-[#2C2825] flex flex-col justify-between">
       {/* Top Header */}
@@ -314,6 +476,22 @@ export default function AdminDashboardClient({
               }`}
             >
               + Assign Teacher
+            </button>
+            <button
+              onClick={() => {
+                setActiveTab("grading-schemes");
+                setMessage(null);
+                if (initialSchools.length > 0 && !selectedSchoolForScheme) {
+                  handleSelectSchemeSchool(initialSchools[0].id);
+                }
+              }}
+              className={`px-4 py-2.5 text-xs font-mono font-medium transition-colors border-b-2 cursor-pointer ${
+                activeTab === "grading-schemes"
+                  ? "border-[#671B24] text-[#671B24]"
+                  : "border-transparent text-[#6B645D] hover:text-[#2C2825]"
+              }`}
+            >
+              Grading Schemes
             </button>
           </div>
         </div>
@@ -800,6 +978,352 @@ export default function AdminDashboardClient({
                 </>
               )}
             </form>
+          </div>
+        )}
+
+        {/* TAB 6: Grading Schemes */}
+        {activeTab === "grading-schemes" && (
+          <div className="space-y-8">
+            {/* School Selector Header */}
+            <div className="border border-[#E9E4D9] bg-[#FFFFFF] p-5 rounded-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div>
+                <span className="text-xs font-mono font-semibold uppercase tracking-wider text-[#47423D] flex items-center gap-2">
+                  <Scale className="w-4 h-4 text-[#671B24]" /> Manage School Grading Schemes
+                </span>
+                <p className="text-xs text-[#6B645D] mt-1">
+                  Select a school to review existing grading schemes or define a new one.
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <label className="text-xs font-mono text-[#47423D]">School:</label>
+                <select
+                  value={selectedSchoolForScheme}
+                  onChange={(e) => handleSelectSchemeSchool(e.target.value)}
+                  className="px-3 py-2 text-xs font-mono bg-[#FAF8F3] border border-[#D9D3C7] rounded-sm text-[#2C2825]"
+                >
+                  <option value="">-- Choose School --</option>
+                  {initialSchools.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name} ({s.slug})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {selectedSchoolForScheme && (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                {/* Existing Schemes List */}
+                <div className="border border-[#E9E4D9] bg-[#FFFFFF] rounded-sm">
+                  <div className="px-5 py-3.5 border-b border-[#E9E4D9] bg-[#FAF8F3] flex items-center justify-between">
+                    <span className="text-xs font-mono font-semibold uppercase tracking-wider text-[#47423D]">
+                      Existing Schemes ({schemesList.length})
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleResetSchemeForm}
+                      className="text-[11px] font-mono text-[#671B24] hover:underline cursor-pointer"
+                    >
+                      + New Scheme
+                    </button>
+                  </div>
+
+                  <div className="p-5">
+                    {loadingSchemes ? (
+                      <p className="text-xs font-mono text-[#6B645D]">Loading schemes...</p>
+                    ) : schemesList.length === 0 ? (
+                      <p className="text-xs text-[#6B645D] italic">
+                        No grading schemes configured for this school yet. Use the form to create one.
+                      </p>
+                    ) : (
+                      <div className="space-y-4">
+                        {schemesList.map((scheme) => (
+                          <div
+                            key={scheme.id}
+                            className={`p-4 rounded-sm border ${
+                              editingSchemeId === scheme.id
+                                ? "border-[#671B24] bg-[#FAF8F3]"
+                                : "border-[#E9E4D9] bg-white hover:bg-[#FAF8F3]"
+                            }`}
+                          >
+                            <div className="flex items-start justify-between">
+                              <div>
+                                <h4 className="font-semibold text-sm text-[#2C2825]">{scheme.name}</h4>
+                                <span className="text-[11px] font-mono text-[#671B24] block mt-0.5">
+                                  {scheme.class_level ? `Class Level: ${scheme.class_level}` : "School-wide Default"}
+                                </span>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => handleEditScheme(scheme)}
+                                className="px-2.5 py-1 text-[11px] font-mono rounded border border-[#D9D3C7] text-[#47423D] hover:bg-white cursor-pointer"
+                              >
+                                Edit
+                              </button>
+                            </div>
+
+                            {/* Parts summary */}
+                            <div className="mt-3">
+                              <span className="text-[10px] font-mono uppercase text-[#6B645D] block mb-1">
+                                Score Parts:
+                              </span>
+                              <div className="flex flex-wrap gap-1.5">
+                                {scheme.parts.map((p, idx) => (
+                                  <span
+                                    key={idx}
+                                    className="px-2 py-0.5 text-[11px] font-mono bg-[#E5EDE5] text-[#3F4E40] rounded border border-[#D3DDD3]"
+                                  >
+                                    {p.name}: {p.max}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+
+                            {/* Boundaries summary */}
+                            <div className="mt-2.5">
+                              <span className="text-[10px] font-mono uppercase text-[#6B645D] block mb-1">
+                                Grade Boundaries:
+                              </span>
+                              <div className="flex flex-wrap gap-1">
+                                {scheme.boundaries.map((b, idx) => (
+                                  <span
+                                    key={idx}
+                                    className="px-1.5 py-0.5 text-[10px] font-mono bg-[#F4F0E6] text-[#47423D] rounded border border-[#E9E4D9]"
+                                  >
+                                    {b.grade} ({b.min}–{b.max}): {b.remark}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Form Builder */}
+                <div className="border border-[#E9E4D9] bg-[#FFFFFF] rounded-sm p-6">
+                  <div className="flex items-center justify-between pb-3 border-b border-[#E9E4D9] mb-4">
+                    <h3 className="text-xs font-mono font-semibold uppercase tracking-wider text-[#47423D]">
+                      {editingSchemeId ? "Edit Scheme" : "Create Grading Scheme"}
+                    </h3>
+                    {editingSchemeId && (
+                      <button
+                        type="button"
+                        onClick={handleResetSchemeForm}
+                        className="text-[11px] font-mono text-[#671B24] hover:underline cursor-pointer"
+                      >
+                        Cancel Editing
+                      </button>
+                    )}
+                  </div>
+
+                  <form onSubmit={handleSaveScheme} className="space-y-4">
+                    <div>
+                      <label className="block text-xs font-mono uppercase text-[#47423D] mb-1">
+                        Scheme Name *
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={schemeName}
+                        onChange={(e) => setSchemeName(e.target.value)}
+                        placeholder="e.g. Standard WAEC / Junior Secondary"
+                        className="w-full px-3 py-2 text-sm bg-[#FAF8F3] border border-[#D9D3C7] rounded-sm text-[#2C2825]"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-mono uppercase text-[#47423D] mb-1">
+                        Class Level (Optional)
+                      </label>
+                      <input
+                        type="text"
+                        value={schemeClassLevel}
+                        onChange={(e) => setSchemeClassLevel(e.target.value)}
+                        placeholder="e.g. JSS1 or leave blank for school default"
+                        className="w-full px-3 py-2 text-sm bg-[#FAF8F3] border border-[#D9D3C7] rounded-sm text-[#2C2825]"
+                      />
+                      <span className="text-[11px] text-[#6B645D] block mt-0.5">
+                        Leave blank to apply as default for all classes in this school.
+                      </span>
+                    </div>
+
+                    {/* Score Parts Builder */}
+                    <div className="pt-2 border-t border-[#F4F0E6]">
+                      <div className="flex items-center justify-between mb-2">
+                        <label className="text-xs font-mono uppercase text-[#47423D] font-medium">
+                          Score Parts (Must sum to 100)
+                        </label>
+                        <span
+                          className={`text-xs font-mono font-semibold ${
+                            schemeParts.reduce((s, p) => s + Number(p.max || 0), 0) === 100
+                              ? "text-[#3F4E40]"
+                              : "text-[#671B24]"
+                          }`}
+                        >
+                          Total: {schemeParts.reduce((s, p) => s + Number(p.max || 0), 0)} / 100
+                        </span>
+                      </div>
+
+                      <div className="space-y-2">
+                        {schemeParts.map((part, index) => (
+                          <div key={index} className="flex items-center gap-2">
+                            <input
+                              type="text"
+                              required
+                              value={part.name}
+                              onChange={(e) => {
+                                const newParts = [...schemeParts];
+                                newParts[index].name = e.target.value;
+                                setSchemeParts(newParts);
+                              }}
+                              placeholder="Part name (e.g. CA1)"
+                              className="flex-1 px-2.5 py-1.5 text-xs bg-[#FAF8F3] border border-[#D9D3C7] rounded-sm"
+                            />
+                            <div className="flex items-center gap-1">
+                              <span className="text-xs font-mono text-[#6B645D]">Max:</span>
+                              <input
+                                type="number"
+                                required
+                                min={1}
+                                max={100}
+                                value={part.max}
+                                onChange={(e) => {
+                                  const newParts = [...schemeParts];
+                                  newParts[index].max = Number(e.target.value);
+                                  setSchemeParts(newParts);
+                                }}
+                                className="w-20 px-2 py-1.5 text-xs bg-[#FAF8F3] border border-[#D9D3C7] rounded-sm"
+                              />
+                            </div>
+                            <button
+                              type="button"
+                              disabled={schemeParts.length <= 1}
+                              onClick={() => setSchemeParts(schemeParts.filter((_, i) => i !== index))}
+                              className="p-1.5 text-[#671B24] hover:bg-[#F6EBEB] rounded cursor-pointer disabled:opacity-30"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setSchemeParts([...schemeParts, { name: `Part ${schemeParts.length + 1}`, max: 10 }])
+                        }
+                        className="mt-2 text-xs font-mono text-[#3F4E40] hover:underline flex items-center gap-1 cursor-pointer"
+                      >
+                        <Plus className="w-3 h-3" /> Add Part
+                      </button>
+                    </div>
+
+                    {/* Grade Boundaries Builder */}
+                    <div className="pt-2 border-t border-[#F4F0E6]">
+                      <div className="flex items-center justify-between mb-2">
+                        <label className="text-xs font-mono uppercase text-[#47423D] font-medium">
+                          Grade Boundaries (Must cover 0–100 continuously)
+                        </label>
+                      </div>
+
+                      <div className="space-y-2">
+                        {schemeBoundaries.map((b, index) => (
+                          <div key={index} className="grid grid-cols-12 gap-1.5 items-center">
+                            <input
+                              type="text"
+                              required
+                              value={b.grade}
+                              onChange={(e) => {
+                                const newB = [...schemeBoundaries];
+                                newB[index].grade = e.target.value;
+                                setSchemeBoundaries(newB);
+                              }}
+                              placeholder="Grade"
+                              className="col-span-2 px-2 py-1.5 text-xs bg-[#FAF8F3] border border-[#D9D3C7] rounded-sm font-mono text-center"
+                            />
+                            <div className="col-span-4 flex items-center gap-1">
+                              <input
+                                type="number"
+                                required
+                                min={0}
+                                max={100}
+                                value={b.min}
+                                onChange={(e) => {
+                                  const newB = [...schemeBoundaries];
+                                  newB[index].min = Number(e.target.value);
+                                  setSchemeBoundaries(newB);
+                                }}
+                                className="w-full px-1.5 py-1.5 text-xs bg-[#FAF8F3] border border-[#D9D3C7] rounded-sm font-mono text-center"
+                              />
+                              <span className="text-xs text-[#6B645D]">–</span>
+                              <input
+                                type="number"
+                                required
+                                min={0}
+                                max={100}
+                                value={b.max}
+                                onChange={(e) => {
+                                  const newB = [...schemeBoundaries];
+                                  newB[index].max = Number(e.target.value);
+                                  setSchemeBoundaries(newB);
+                                }}
+                                className="w-full px-1.5 py-1.5 text-xs bg-[#FAF8F3] border border-[#D9D3C7] rounded-sm font-mono text-center"
+                              />
+                            </div>
+                            <input
+                              type="text"
+                              required
+                              value={b.remark}
+                              onChange={(e) => {
+                                const newB = [...schemeBoundaries];
+                                newB[index].remark = e.target.value;
+                                setSchemeBoundaries(newB);
+                              }}
+                              placeholder="Remark (e.g. Excellent)"
+                              className="col-span-5 px-2 py-1.5 text-xs bg-[#FAF8F3] border border-[#D9D3C7] rounded-sm"
+                            />
+                            <button
+                              type="button"
+                              disabled={schemeBoundaries.length <= 1}
+                              onClick={() =>
+                                setSchemeBoundaries(schemeBoundaries.filter((_, i) => i !== index))
+                              }
+                              className="col-span-1 p-1.5 text-[#671B24] hover:bg-[#F6EBEB] rounded cursor-pointer disabled:opacity-30"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setSchemeBoundaries([
+                            ...schemeBoundaries,
+                            { grade: "X", min: 0, max: 0, remark: "New Remark" },
+                          ])
+                        }
+                        className="mt-2 text-xs font-mono text-[#3F4E40] hover:underline flex items-center gap-1 cursor-pointer"
+                      >
+                        <Plus className="w-3 h-3" /> Add Boundary
+                      </button>
+                    </div>
+
+                    <button
+                      type="submit"
+                      disabled={loading}
+                      className="w-full py-2.5 px-4 rounded-sm text-xs font-mono font-medium text-white bg-[#671B24] hover:bg-[#52151D] cursor-pointer transition-colors mt-4 disabled:opacity-50"
+                    >
+                      {loading ? "Saving..." : editingSchemeId ? "Update Grading Scheme" : "Create Grading Scheme"}
+                    </button>
+                  </form>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </main>

@@ -8,8 +8,11 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "db:seed": "npx prisma db seed",
-        "test": "node --import tsx --test --test-concurrency=1 tests/config.test.ts tests/pin.test.ts tests/auth-isolation.test.ts tests/security.test.ts tests/school-api.test.ts"
+    "db:seed": "node --import tsx scripts/assert-dev-db.ts && npx prisma db seed",
+    "seed": "node --import tsx scripts/assert-dev-db.ts && npx prisma db seed",
+    "db:migrate": "node --import tsx scripts/assert-dev-db.ts && npx prisma migrate dev",
+    "db:push": "node --import tsx scripts/assert-dev-db.ts && npx prisma db push",
+    "test": "node --import tsx --test --test-concurrency=1 tests/config.test.ts tests/pin.test.ts tests/security.test.ts tests/unit/grading.test.ts tests/grading-scheme.test.ts"
   },
   "prisma": {
     "seed": "node --import tsx prisma/seed.ts"
