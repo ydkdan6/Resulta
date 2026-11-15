@@ -12,7 +12,7 @@ const SPOOFABLE_HEADERS = [
   "x-user-school-id",
 ];
 
-const RESULTS_ALLOWED_PREFIXES = ["/_next/", "/api/parent/"];
+const RESULTS_ALLOWED_PREFIXES = ["/_next/", "/api/parent/", "/api/public/"];
 
 function parseHost(rawHost: string): { slug: string | null; portal: Portal } {
   const hostname = rawHost.split(":")[0].toLowerCase();
