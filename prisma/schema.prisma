@@ -22,6 +22,7 @@ enum StudentStatus {
   INACTIVE
   TRANSFERRED
   GRADUATED
+  LEFT
 }
 
 enum TermStatus {
@@ -56,17 +57,20 @@ model School {
   id             String   @id @default(uuid())
   name           String
   slug           String   @unique
-  logo_url       String?
-  card_price     Decimal  @default(2000.00) @db.Decimal(10, 2)
-  platform_share Decimal  @default(1000.00) @db.Decimal(10, 2)
-  created_at     DateTime @default(now())
-  updated_at     DateTime @updatedAt
+  logo_url               String?
+  card_price             Decimal         @default(2000.00) @db.Decimal(10, 2)
+  platform_share         Decimal         @default(1000.00) @db.Decimal(10, 2)
+  roster_confirmed_at    DateTime?
+  roster_confirmed_count Int?
+  created_at             DateTime        @default(now())
+  updated_at             DateTime        @updatedAt
 
   users               User[]
   classes             Class[]
   subjects            Subject[]
   teacherAssignments TeacherAssignment[]
   students            Student[]
+  studentImports      StudentImport[]
   terms               Term[]
   results             Result[]
   studentTermStatuses StudentTermStatus[]
@@ -94,6 +98,7 @@ model User {
   school             School?             @relation(fields: [school_id], references: [id], onDelete: Cascade)
   teacherAssignments TeacherAssignment[]
   confirmedBatches   PaymentBatch[]      @relation("BatchConfirmer")
+  studentImports     StudentImport[]
   auditLogs          AuditLog[]
 
   @@index([school_id])
@@ -159,9 +164,10 @@ model Student {
   admission_number String
   full_name        String
   class_id         String
-  status           StudentStatus @default(ACTIVE)
-  created_at       DateTime      @default(now())
-  updated_at       DateTime      @updatedAt
+  status                 StudentStatus @default(ACTIVE)
+  not_in_latest_upload   Boolean       @default(false)
+  created_at             DateTime      @default(now())
+  updated_at             DateTime      @updatedAt
 
   school       School              @relation(fields: [school_id], references: [id], onDelete: Cascade)
   class        Class               @relation(fields: [class_id], references: [id], onDelete: Restrict)
@@ -174,6 +180,24 @@ model Student {
   @@index([school_id])
   @@index([class_id])
   @@index([admission_number])
+}
+
+model StudentImport {
+  id              String   @id @default(uuid())
+  school_id       String
+  user_id         String?
+  file_name       String
+  new_count       Int
+  updated_count   Int
+  unchanged_count Int
+  error_count     Int
+  total_count     Int
+  created_at      DateTime @default(now())
+
+  school School @relation(fields: [school_id], references: [id], onDelete: Cascade)
+  user   User?  @relation(fields: [user_id], references: [id], onDelete: SetNull)
+
+  @@index([school_id])
 }
 
 model Term {

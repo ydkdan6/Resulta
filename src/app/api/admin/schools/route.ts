@@ -81,9 +81,9 @@ async function processLogoUpload(formData: FormData): Promise<string | null> {
 // ---------------------------------------------------------------------------
 // GET – list schools (admin only)
 // ---------------------------------------------------------------------------
-export async function GET() {
+export async function GET(request?: NextRequest) {
   try {
-    await requirePlatformAdmin();
+    await requirePlatformAdmin(undefined, request);
     const schools = await prisma.school.findMany({
       orderBy: { created_at: 'desc' },
       include: { _count: { select: { users: true, classes: true, students: true } } },
@@ -102,7 +102,7 @@ export async function GET() {
 // ---------------------------------------------------------------------------
 export async function POST(request: NextRequest) {
   try {
-    await requirePlatformAdmin();
+    await requirePlatformAdmin(undefined, request);
     const contentType = request.headers.get('content-type') ?? '';
 
     let name: string | undefined;

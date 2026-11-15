@@ -28,8 +28,8 @@ export async function requireAuth(providedSession?: SessionUser | null, request?
  * Ensures the authenticated user is a platform administrator.
  * Denies access with 403 for all other roles or tenants.
  */
-export async function requirePlatformAdmin(providedSession?: SessionUser | null): Promise<SessionUser> {
-  const session = await requireAuth(providedSession);
+export async function requirePlatformAdmin(providedSession?: SessionUser | null, request?: NextRequest): Promise<SessionUser> {
+  const session = await requireAuth(providedSession, request);
   if (session.role !== 'platform_admin') {
     throw new AuthError('Platform administrator privileges required.', 403);
   }
