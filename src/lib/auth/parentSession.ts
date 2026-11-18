@@ -1,5 +1,5 @@
 import { SignJWT, jwtVerify } from 'jose';
-import { NextRequest } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 
 export const PARENT_SESSION_COOKIE = 'resulta_parent_session';
 const PARENT_JWT_SECRET = new TextEncoder().encode(
@@ -49,4 +49,40 @@ export async function getParentSession(request: NextRequest): Promise<ParentSess
   const token = request.cookies.get(PARENT_SESSION_COOKIE)?.value;
   if (!token) return null;
   return verifyParentSessionToken(token);
+}
+
+/**
+ * Sets the parent session cookie on response with HTTP-only and HTTPS-secure flags.
+ */
+export function setParentSessionCookie(response: NextResponse, token: string): void {
+  const isSecure =
+    process.env.NODE_ENV === 'production' ||
+    process.env.COOKIE_SECURE === 'true' ||
+    process.env.HTTPS === 'on';
+
+  response.cookies.set(PARENT_SESSION_COOKIE, token, {
+    httpOnly: true,
+    secure: isSecure,
+    sameSite: 'lax',
+    path: '/',
+    maxAge: 30 * 60, // 30 minutes
+  });
+}
+
+/**
+ * Clears the parent session cookie.
+ */
+export function clearParentSessionCookie(response: NextResponse): void {
+  const isSecure =
+    process.env.NODE_ENV === 'production' ||
+    process.env.COOKIE_SECURE === 'true' ||
+    process.env.HTTPS === 'on';
+
+  response.cookies.set(PARENT_SESSION_COOKIE, '', {
+    httpOnly: true,
+    secure: isSecure,
+    sameSite: 'lax',
+    path: '/',
+    maxAge: 0,
+  });
 }

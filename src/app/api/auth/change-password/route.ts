@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSession, createSessionToken, setSessionCookie } from '@/lib/auth/session';
 import { hashPassword, verifyPassword } from '@/lib/auth/password';
 import { prisma } from '@/lib/prisma';
+import { ChangePasswordSchema } from '@/lib/validation/schemas';
+import { validateInput } from '@/lib/validation/validate';
+import { logger } from '@/lib/logger';
 
 export async function POST(request: NextRequest) {
   try {
@@ -10,21 +13,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { currentPassword, newPassword } = await request.json();
-
-    if (!currentPassword || !newPassword) {
-      return NextResponse.json(
-        { error: 'Current password and new password are required.' },
-        { status: 400 }
-      );
+    const rawBody = await request.json().catch(() => null);
+    const validation = validateInput(ChangePasswordSchema, rawBody);
+    if (!validation.success) {
+      return validation.response;
     }
-
-    if (newPassword.length < 8) {
-      return NextResponse.json(
-        { error: 'New password must be at least 8 characters long.' },
-        { status: 400 }
-      );
-    }
+    const { currentPassword, newPassword } = validation.data;
 
     const user = await prisma.user.findUnique({
       where: { id: session.id },
@@ -67,7 +61,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error('Password change error:', error);
+    logger.error('Password change error', error);
     return NextResponse.json(
       { error: 'Failed to update password.' },
       { status: 500 }

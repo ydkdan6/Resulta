@@ -20,6 +20,7 @@ import {
   Users
 } from "lucide-react";
 import RosterManager from "./RosterManager";
+import AuditLogViewer from "@/components/AuditLogViewer";
 
 interface SchoolData {
   id: string;
@@ -84,7 +85,7 @@ export default function AdminDashboardClient({
   initialTeachers,
 }: Props) {
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<"schools" | "create-school" | "create-admin" | "create-teacher" | "assign-teacher" | "grading-schemes" | "student-roster" | "payment-batches">("schools");
+  const [activeTab, setActiveTab] = useState<"schools" | "create-school" | "create-admin" | "create-teacher" | "assign-teacher" | "grading-schemes" | "student-roster" | "payment-batches" | "audit-logs">("schools");
 
   // Payment Batches states
   const [adminBatches, setAdminBatches] = useState<{
@@ -576,6 +577,19 @@ export default function AdminDashboardClient({
               }`}
             >
               Payment Batches
+            </button>
+            <button
+              onClick={() => {
+                setActiveTab("audit-logs");
+                setMessage(null);
+              }}
+              className={`px-4 py-2.5 text-xs font-mono font-medium transition-colors border-b-2 cursor-pointer ${
+                activeTab === "audit-logs"
+                  ? "border-[#671B24] text-[#671B24]"
+                  : "border-transparent text-[#6B645D] hover:text-[#2C2825]"
+              }`}
+            >
+              Audit Logs
             </button>
           </div>
         </div>
@@ -1508,6 +1522,17 @@ export default function AdminDashboardClient({
               </table>
             </div>
           </div>
+        )}
+
+        {activeTab === "audit-logs" && (
+          <AuditLogViewer
+            portalType="admin"
+            schools={initialSchools.map((s) => ({
+              id: s.id,
+              name: s.name,
+              slug: s.slug,
+            }))}
+          />
         )}
       </main>
 

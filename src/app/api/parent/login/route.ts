@@ -2,8 +2,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { verifyPin } from '@/lib/auth/pin';
-import { createParentSessionToken, PARENT_SESSION_COOKIE } from '@/lib/auth/parentSession';
+import { createParentSessionToken, setParentSessionCookie } from '@/lib/auth/parentSession';
 import { checkRateLimit, recordFailedAttempt, resetAttempts } from '@/lib/auth/parentRateLimit';
+import { ParentLoginSchema } from '@/lib/validation/schemas';
+import { validateInput } from '@/lib/validation/validate';
+import { logger } from '@/lib/logger';
+import { getCachedSchoolBranding } from '@/modules/cache/cacheService';
 
 /**
  * POST /api/parent/login
@@ -16,8 +20,12 @@ export async function POST(request: NextRequest) {
       request.headers.get('x-real-ip') ||
       '127.0.0.1';
 
-    const body = await request.json();
-    const { admissionNumber, pin, schoolSlug: rawSlug } = body || {};
+    const rawBody = await request.json().catch(() => null);
+    const validation = validateInput(ParentLoginSchema, rawBody);
+    if (!validation.success) {
+      return validation.response;
+    }
+    const { admissionNumber, pin, schoolSlug: rawSlug } = validation.data;
 
     // Determine school slug from header or body
     const headerSlug = request.headers.get('x-school-slug');
@@ -25,13 +33,6 @@ export async function POST(request: NextRequest) {
 
     if (!slug) {
       return NextResponse.json({ error: 'School context missing.' }, { status: 400 });
-    }
-
-    if (!admissionNumber || !pin) {
-      return NextResponse.json(
-        { error: 'Invalid admission number or PIN.' },
-        { status: 400 }
-      );
     }
 
     // 1. Rate limiting by IP and by admission number
@@ -45,11 +46,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 2. Find school
-    const school = await prisma.school.findUnique({
-      where: { slug },
-      select: { id: true, name: true, slug: true },
-    });
+    // 2. Find school (cached for high throughput)
+    let school = await getCachedSchoolBranding(slug);
+    if (!school) {
+      school = await prisma.school.findUnique({
+        where: { slug },
+        select: { id: true, name: true, slug: true, logo_url: true },
+      });
+    }
     if (!school) {
       return NextResponse.json({ error: 'Invalid admission number or PIN.' }, { status: 401 });
     }
@@ -181,17 +185,11 @@ export async function POST(request: NextRequest) {
       logins_remaining: matchedPin.max_logins - (matchedPin.logins_used + 1),
     });
 
-    response.cookies.set(PARENT_SESSION_COOKIE, token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      path: '/',
-      maxAge: 30 * 60, // 30 minutes
-    });
+    setParentSessionCookie(response, token);
 
     return response;
   } catch (e: unknown) {
-    console.error('[api/parent/login POST]', e);
+    logger.error('[api/parent/login POST]', e);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

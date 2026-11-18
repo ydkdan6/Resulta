@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireAuth, verifyTeacherAssignment, AuthError } from "@/lib/auth/scope";
 import { DEFAULT_FALLBACK_SCHEME } from "@/lib/scores/validateScores";
+import { logger } from "@/lib/logger";
+import {
+  checkUploadRateLimit,
+  recordUpload,
+} from "@/modules/security/rateLimiter";
 
 function escapeCsvCell(val: string): string {
   if (val.includes(",") || val.includes('"') || val.includes("\n") || val.includes("\r")) {
@@ -20,6 +25,19 @@ export async function GET(request: NextRequest) {
         { status: 400 }
       );
     }
+
+    // Rate limit: treat template downloads like file uploads (10 per 5 minutes per IP)
+    const ip = request.headers.get("x-forwarded-for")?.split(",")[0].trim() ?? "unknown";
+    const rateLimitResult = checkUploadRateLimit(`${ip}:template`);
+    if (!rateLimitResult.allowed) {
+      return NextResponse.json(
+        {
+          error: rateLimitResult.message || `Too many template downloads. Please wait before trying again.`,
+        },
+        { status: 429 }
+      );
+    }
+    recordUpload(`${ip}:template`);
 
     const { searchParams } = new URL(request.url);
     const classId = searchParams.get("classId");
@@ -102,7 +120,7 @@ export async function GET(request: NextRequest) {
     if (error instanceof AuthError) {
       return NextResponse.json({ error: error.message }, { status: error.statusCode });
     }
-    console.error("[api/staff/scores/template] Error:", error);
+    logger.error("[api/staff/scores/template] Error:", error);
     return NextResponse.json({ error: "Failed to generate CSV template." }, { status: 500 });
   }
 }

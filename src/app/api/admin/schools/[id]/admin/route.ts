@@ -3,6 +3,9 @@ import { requirePlatformAdmin, AuthError } from '@/lib/auth/scope';
 import { hashPassword, generateTemporaryPassword } from '@/lib/auth/password';
 import { prisma } from '@/lib/prisma';
 import { Role } from '@prisma/client';
+import { logger } from '@/lib/logger';
+import { AdminCreateAdminSchema } from '@/lib/validation/schemas';
+import { validateInput } from '@/lib/validation/validate';
 
 export async function POST(
   request: NextRequest,
@@ -20,12 +23,15 @@ export async function POST(
       return NextResponse.json({ error: 'School not found.' }, { status: 404 });
     }
 
-    const body = await request.json();
-    const { name, email, password } = body;
-
-    if (!name || !email) {
+    const rawBody = await request.json().catch(() => null);
+    const validation = validateInput(AdminCreateAdminSchema, rawBody);
+    if (!validation.success) {
+      return validation.response;
+    }
+    const { name, email, password } = validation.data;
+    if (!email) {
       return NextResponse.json(
-        { error: 'Name and email are required for the school administrator.' },
+        { error: 'Email is required for the school administrator.' },
         { status: 400 }
       );
     }
@@ -73,7 +79,7 @@ export async function POST(
     if (error instanceof AuthError) {
       return NextResponse.json({ error: error.message }, { status: error.statusCode });
     }
-    console.error('Create school admin error:', error);
+    logger.error('Create school admin error:', error);
     return NextResponse.json({ error: 'Failed to create school administrator.' }, { status: 500 });
   }
 }

@@ -2,6 +2,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getParentSession } from '@/lib/auth/parentSession';
+import { logger } from '@/lib/logger';
+import {
+  getCachedSchoolBranding,
+  getCachedReportCard,
+  setCachedReportCard,
+  PRIVATE_NO_CACHE_HEADERS,
+} from '@/modules/cache/cacheService';
 
 /**
  * GET /api/parent/results
@@ -11,6 +18,8 @@ import { getParentSession } from '@/lib/auth/parentSession';
  * - Current term first, then earlier published terms up to the PIN's term.
  * - Terms that are locked or unpublished do not appear.
  * - Later terms are never shown.
+ * - Leverages high-performance cache for instant loads on mobile connections during result release week.
+ * - Never caches PINs or private credentials.
  */
 export async function GET(request: NextRequest) {
   try {
@@ -21,11 +30,14 @@ export async function GET(request: NextRequest) {
 
     const { student_id, school_id, pin_session, pin_term_number } = session;
 
-    // Fetch school info
-    const school = await prisma.school.findUnique({
-      where: { id: school_id },
-      select: { id: true, name: true, slug: true, logo_url: true },
-    });
+    // Fetch school info (cached)
+    let school = await getCachedSchoolBranding(school_id);
+    if (!school) {
+      school = await prisma.school.findUnique({
+        where: { id: school_id },
+        select: { id: true, name: true, slug: true, logo_url: true },
+      });
+    }
 
     // Student info
     const student = await prisma.student.findUnique({
@@ -60,7 +72,7 @@ export async function GET(request: NextRequest) {
       return false; // Later terms are never shown!
     });
 
-    // Check withhold / locks per student for these terms
+    // Check withhold / locks per student for these terms (must always be verified live)
     const studentStatuses = await prisma.studentTermStatus.findMany({
       where: {
         student_id,
@@ -76,24 +88,36 @@ export async function GET(request: NextRequest) {
     // Filter out locked terms: "Terms that are locked or unpublished do not appear"
     const visibleTerms = accessibleTerms.filter((t) => !lockedTermIds.has(t.id));
 
-    // Fetch student's submitted results for all visible terms
-    const results = await prisma.result.findMany({
-      where: {
-        school_id,
-        student_id,
-        term_id: { in: visibleTerms.map((t) => t.id) },
-        status: 'SUBMITTED',
-      },
-      include: {
-        subject: { select: { id: true, name: true, code: true } },
-      },
-      orderBy: { subject: { name: 'asc' } },
-    });
+    // For visible terms, retrieve from cache or query DB
+    const termsWithResults = await Promise.all(
+      visibleTerms.map(async (t) => {
+        const cachedResults = getCachedReportCard(school_id, student_id, t.id);
+        if (cachedResults) {
+          return {
+            id: t.id,
+            name: `Term ${t.term_number} (${t.session})`,
+            session: t.session,
+            term_number: t.term_number,
+            is_current: t.id === session.pin_term_id,
+            subjects: cachedResults,
+          };
+        }
 
-    const termsWithResults = visibleTerms.map((t) => {
-      const termResults = results
-        .filter((r) => r.term_id === t.id)
-        .map((r) => ({
+        // Fetch student's submitted results for this term
+        const results = await prisma.result.findMany({
+          where: {
+            school_id,
+            student_id,
+            term_id: t.id,
+            status: 'SUBMITTED',
+          },
+          include: {
+            subject: { select: { id: true, name: true, code: true } },
+          },
+          orderBy: { subject: { name: 'asc' } },
+        });
+
+        const termResults = results.map((r) => ({
           subject: r.subject.name,
           ca_score: r.ca_score ? Number(r.ca_score) : null,
           exam_score: r.exam_score ? Number(r.exam_score) : null,
@@ -102,23 +126,32 @@ export async function GET(request: NextRequest) {
           remark: r.remark,
         }));
 
-      return {
-        id: t.id,
-        name: `Term ${t.term_number} (${t.session})`,
-        session: t.session,
-        term_number: t.term_number,
-        is_current: t.id === session.pin_term_id,
-        subjects: termResults,
-      };
-    });
+        // Cache the published report card
+        setCachedReportCard(school_id, student_id, t.id, termResults);
 
-    return NextResponse.json({
-      school,
-      student,
-      terms: termsWithResults,
-    });
+        return {
+          id: t.id,
+          name: `Term ${t.term_number} (${t.session})`,
+          session: t.session,
+          term_number: t.term_number,
+          is_current: t.id === session.pin_term_id,
+          subjects: termResults,
+        };
+      })
+    );
+
+    return NextResponse.json(
+      {
+        school,
+        student,
+        terms: termsWithResults,
+      },
+      {
+        headers: PRIVATE_NO_CACHE_HEADERS,
+      }
+    );
   } catch (e: unknown) {
-    console.error('[api/parent/results GET]', e);
+    logger.error('[api/parent/results GET]', e);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

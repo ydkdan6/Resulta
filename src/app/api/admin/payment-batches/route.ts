@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requirePlatformAdmin, AuthError } from '@/lib/auth/scope';
+import { logger } from '@/lib/logger';
 
 /**
  * GET /api/admin/payment-batches?schoolId=
@@ -41,7 +42,7 @@ export async function GET(request: NextRequest) {
     if (e instanceof AuthError) {
       return NextResponse.json({ error: e.message }, { status: e.statusCode });
     }
-    console.error('[api/admin/payment-batches GET]', e);
+    logger.error('[api/admin/payment-batches GET]', e);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

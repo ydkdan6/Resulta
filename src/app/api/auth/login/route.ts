@@ -2,25 +2,46 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { verifyPassword } from '@/lib/auth/password';
 import { createSessionToken, setSessionCookie } from '@/lib/auth/session';
+import { LoginSchema } from '@/lib/validation/schemas';
+import { validateInput } from '@/lib/validation/validate';
+import { logger } from '@/lib/logger';
+import {
+  checkStaffLoginRateLimit,
+  recordStaffLoginFailure,
+  resetStaffLoginAttempts,
+} from '@/modules/security/rateLimiter';
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
-    const { email, password, school_slug } = body;
+    const ip =
+      request.headers.get('x-forwarded-for')?.split(',')[0].trim() ||
+      request.headers.get('x-real-ip') ||
+      '127.0.0.1';
 
-    if (!email || !password) {
+    const rawBody = await request.json().catch(() => null);
+    const validation = validateInput(LoginSchema, rawBody);
+    if (!validation.success) {
+      return validation.response;
+    }
+    const { email, password, school_slug } = validation.data;
+    const normalizedEmail = email.toLowerCase().trim();
+
+    // Rate Limit Check
+    const rateCheck = checkStaffLoginRateLimit(ip, normalizedEmail);
+    if (rateCheck.locked) {
       return NextResponse.json(
-        { error: 'Email and password are required.' },
-        { status: 400 }
+        { error: rateCheck.message || 'Too many failed staff login attempts. Please try again later.' },
+        { status: 429 }
       );
     }
 
     const user = await prisma.user.findUnique({
-      where: { email: email.toLowerCase().trim() },
+      where: { email: normalizedEmail },
       include: { school: true },
     });
 
     if (!user) {
+      recordStaffLoginFailure(ip, normalizedEmail);
       return NextResponse.json(
         { error: 'Invalid email or password.' },
         { status: 401 }
@@ -29,6 +50,7 @@ export async function POST(request: NextRequest) {
 
     const isMatch = await verifyPassword(password, user.password_hash);
     if (!isMatch) {
+      recordStaffLoginFailure(ip, normalizedEmail);
       return NextResponse.json(
         { error: 'Invalid email or password.' },
         { status: 401 }
@@ -44,6 +66,9 @@ export async function POST(request: NextRequest) {
         );
       }
     }
+
+    // Reset rate limit on successful authentication
+    resetStaffLoginAttempts(ip, normalizedEmail);
 
     // Create session token
     const token = await createSessionToken({
@@ -82,7 +107,7 @@ export async function POST(request: NextRequest) {
       redirectUrl,
     });
   } catch (error) {
-    console.error('Login error:', error);
+    logger.error('Login error', error);
     return NextResponse.json(
       { error: 'Authentication failed. Please try again later.' },
       { status: 500 }

@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, AuthError } from "@/lib/auth/scope";
 import { prisma } from "@/lib/prisma";
 import { validateStudentRow } from "@/lib/roster/parseAndValidate";
+import { logger } from "@/lib/logger";
 
 /**
  * PATCH /api/staff/students/:id
@@ -90,7 +91,7 @@ export async function PATCH(
     if (e instanceof AuthError) {
       return NextResponse.json({ error: e.message }, { status: e.statusCode });
     }
-    console.error("[api/staff/students/[id] PATCH]", e);
+    logger.error("[api/staff/students/[id] PATCH]", e);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

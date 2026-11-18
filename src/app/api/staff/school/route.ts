@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAuth, requireSchoolAccess, AuthError } from '@/lib/auth/scope';
 import { prisma } from '@/lib/prisma';
+import { logger } from '@/lib/logger';
+import { UpdateSchoolSchema } from '@/lib/validation/schemas';
+import { validateInput } from '@/lib/validation/validate';
 
 export async function PATCH(request: NextRequest) {
   try {
-    const session = await requireAuth();
+    const session = await requireAuth(undefined, request);
 
     // Teachers cannot modify school metadata
     if (session.role === 'teacher') {
@@ -14,12 +17,12 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
-    const body = await request.json();
-    const { school_id, name, logo_url } = body;
-
-    if (!school_id) {
-      return NextResponse.json({ error: 'school_id is required.' }, { status: 400 });
+    const rawBody = await request.json().catch(() => null);
+    const validation = validateInput(UpdateSchoolSchema, rawBody);
+    if (!validation.success) {
+      return validation.response;
     }
+    const { school_id, name, logo_url } = validation.data;
 
     // Tenant Isolation Check: School A cannot modify School B data
     requireSchoolAccess(session, school_id);
@@ -37,7 +40,7 @@ export async function PATCH(request: NextRequest) {
     if (error instanceof AuthError) {
       return NextResponse.json({ error: error.message }, { status: error.statusCode });
     }
-    console.error('Update school error:', error);
+    logger.error('Update school error:', error);
     return NextResponse.json({ error: 'Failed to update school.' }, { status: 500 });
   }
 }

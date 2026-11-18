@@ -47,7 +47,9 @@ describe('Public Parent Portal & PIN Access Enforcement', () => {
 
   test('1. Rate Limiting: Repeated failed attempts trigger lockout on IP / admission number', async () => {
     const origSchool = prisma.school.findUnique;
+    const origStudent = prisma.student.findFirst;
     (prisma.school.findUnique as any) = async () => ({ id: 's-1', name: 'Grace High', slug: 'grace' });
+    (prisma.student.findFirst as any) = async () => null;
 
     try {
       // 5 consecutive failed login attempts
@@ -73,6 +75,7 @@ describe('Public Parent Portal & PIN Access Enforcement', () => {
       assert.match(data.error, /Too many failed attempts/);
     } finally {
       prisma.school.findUnique = origSchool;
+      prisma.student.findFirst = origStudent;
     }
   });
 

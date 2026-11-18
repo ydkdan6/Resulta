@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, AuthError } from "@/lib/auth/scope";
 import { prisma } from "@/lib/prisma";
 import { validateStudentRow } from "@/lib/roster/parseAndValidate";
+import { logger } from "@/lib/logger";
 
 /**
  * GET /api/staff/students
@@ -108,7 +109,7 @@ export async function GET(request: NextRequest) {
     if (e instanceof AuthError) {
       return NextResponse.json({ error: e.message }, { status: e.statusCode });
     }
-    console.error("[api/staff/students GET]", e);
+    logger.error("[api/staff/students GET]", e);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
@@ -175,7 +176,7 @@ export async function POST(request: NextRequest) {
     if (e instanceof AuthError) {
       return NextResponse.json({ error: e.message }, { status: e.statusCode });
     }
-    console.error("[api/staff/students POST]", e);
+    logger.error("[api/staff/students POST]", e);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

@@ -2,6 +2,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, AuthError } from '@/lib/auth/scope';
+import { ParentComplaintSchema } from '@/lib/validation/schemas';
+import { validateInput } from '@/lib/validation/validate';
+import { logger } from '@/lib/logger';
 
 /**
  * GET /api/staff/complaints?termId=&status=
@@ -51,7 +54,7 @@ export async function GET(request: NextRequest) {
     if (e instanceof AuthError) {
       return NextResponse.json({ error: e.message }, { status: e.statusCode });
     }
-    console.error('[api/staff/complaints GET]', e);
+    logger.error('[api/staff/complaints GET]', e);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
@@ -63,15 +66,12 @@ export async function GET(request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
-    const { schoolSlug, studentAdmissionNumber, termId, message } = body || {};
-
-    if (!schoolSlug || !studentAdmissionNumber || !message) {
-      return NextResponse.json(
-        { error: 'schoolSlug, studentAdmissionNumber, and message are required.' },
-        { status: 400 }
-      );
+    const rawBody = await request.json().catch(() => null);
+    const validation = validateInput(ParentComplaintSchema, rawBody);
+    if (!validation.success) {
+      return validation.response;
     }
+    const { schoolSlug, studentAdmissionNumber, termId, message } = validation.data;
 
     // 1. Find school by slug
     const school = await prisma.school.findUnique({
@@ -139,7 +139,7 @@ export async function POST(request: NextRequest) {
       { status: 201 }
     );
   } catch (e: unknown) {
-    console.error('[api/staff/complaints POST]', e);
+    logger.error('[api/staff/complaints POST]', e);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

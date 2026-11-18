@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, AuthError } from "@/lib/auth/scope";
 import { prisma } from "@/lib/prisma";
 import { recordAuditLog } from "@/lib/audit";
+import { logger } from "@/lib/logger";
 
 /**
  * POST /api/staff/roster/confirm
@@ -49,7 +50,7 @@ export async function POST(request: NextRequest) {
     if (e instanceof AuthError) {
       return NextResponse.json({ error: e.message }, { status: e.statusCode });
     }
-    console.error("[api/staff/roster/confirm POST]", e);
+    logger.error("[api/staff/roster/confirm POST]", e);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

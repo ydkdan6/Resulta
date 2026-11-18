@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth, AuthError } from "@/lib/auth/scope";
 import { prisma } from "@/lib/prisma";
+import { logger } from "@/lib/logger";
 
 export async function GET(
   request: NextRequest,
@@ -50,7 +51,7 @@ export async function GET(
     if (e instanceof AuthError) {
       return NextResponse.json({ error: e.message }, { status: e.statusCode });
     }
-    console.error("[api/admin/roster/history]", e);
+    logger.error("[api/admin/roster/history]", e);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

@@ -3,6 +3,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requirePlatformAdmin, AuthError } from '@/lib/auth/scope';
 import { Prisma } from '@prisma/client';
+import { ConfirmBatchSchema } from '@/lib/validation/schemas';
+import { validateInput } from '@/lib/validation/validate';
+import { logger } from '@/lib/logger';
 
 /**
  * POST /api/admin/payment-batches/[id]/confirm
@@ -17,13 +20,15 @@ export async function POST(
     const session = await requirePlatformAdmin(undefined, request);
     const { id } = await context.params;
 
-    let body = {};
-    try {
-      body = await request.json();
-    } catch {
-      // Body is optional
+    let amountReceived: number | undefined;
+    const rawBody = await request.json().catch(() => null);
+    if (rawBody && Object.keys(rawBody).length > 0) {
+      const validation = validateInput(ConfirmBatchSchema, rawBody);
+      if (!validation.success) {
+        return validation.response;
+      }
+      amountReceived = validation.data.amountReceived;
     }
-    const { amountReceived } = (body as { amountReceived?: number }) || {};
 
     const batch = await prisma.paymentBatch.findUnique({
       where: { id },
@@ -81,7 +86,7 @@ export async function POST(
     if (e instanceof AuthError) {
       return NextResponse.json({ error: e.message }, { status: e.statusCode });
     }
-    console.error('[api/admin/payment-batches/[id]/confirm POST]', e);
+    logger.error('[api/admin/payment-batches/[id]/confirm POST]', e);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

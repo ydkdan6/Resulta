@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAuth, verifyTeacherClassAccess, AuthError } from '@/lib/auth/scope';
 import { prisma } from '@/lib/prisma';
+import { logger } from '@/lib/logger';
 
 export async function GET(
   request: NextRequest,
   context: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = await requireAuth();
+    const session = await requireAuth(undefined, request);
     const { id: classId } = await context.params;
 
     const classObj = await prisma.class.findUnique({
@@ -52,7 +53,7 @@ export async function GET(
     if (error instanceof AuthError) {
       return NextResponse.json({ error: error.message }, { status: error.statusCode });
     }
-    console.error('Error fetching class details:', error);
+    logger.error('Error fetching class details:', error);
     return NextResponse.json({ error: 'Failed to retrieve class details.' }, { status: 500 });
   }
 }

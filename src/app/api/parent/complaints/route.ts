@@ -9,25 +9,35 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { ParentComplaintSchema } from '@/lib/validation/schemas';
+import { validateInput } from '@/lib/validation/validate';
+import { logger } from '@/lib/logger';
+import {
+  checkComplaintRateLimit,
+  recordComplaintSubmission,
+} from '@/modules/security/rateLimiter';
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json().catch(() => null);
-    if (!body) {
-      return NextResponse.json({ error: 'Invalid JSON body.' }, { status: 400 });
+    const ip =
+      request.headers.get('x-forwarded-for')?.split(',')[0].trim() ||
+      request.headers.get('x-real-ip') ||
+      '127.0.0.1';
+
+    const rawBody = await request.json().catch(() => null);
+    const validation = validateInput(ParentComplaintSchema, rawBody);
+    if (!validation.success) {
+      return validation.response;
     }
 
-    const { schoolSlug, studentAdmissionNumber, termId, message } = body as {
-      schoolSlug?: string;
-      studentAdmissionNumber?: string;
-      termId?: string;
-      message?: string;
-    };
+    const { schoolSlug, studentAdmissionNumber, termId, message } = validation.data;
 
-    if (!schoolSlug?.trim() || !studentAdmissionNumber?.trim() || !message?.trim()) {
+    // Rate Limiting on Complaint Submissions
+    const rateCheck = checkComplaintRateLimit(ip);
+    if (!rateCheck.allowed) {
       return NextResponse.json(
-        { error: 'schoolSlug, studentAdmissionNumber, and message are required.' },
-        { status: 400 }
+        { error: rateCheck.message || 'Complaint rate limit reached. Please wait before submitting another report.' },
+        { status: 429 }
       );
     }
 
@@ -88,6 +98,8 @@ export async function POST(request: NextRequest) {
       },
     });
 
+    recordComplaintSubmission(ip);
+
     return NextResponse.json(
       {
         success: true,
@@ -97,7 +109,7 @@ export async function POST(request: NextRequest) {
       { status: 201 }
     );
   } catch (e: unknown) {
-    console.error('[api/parent/complaints POST]', e);
+    logger.error('[api/parent/complaints POST]', e);
     return NextResponse.json({ error: 'Internal server error.' }, { status: 500 });
   }
 }

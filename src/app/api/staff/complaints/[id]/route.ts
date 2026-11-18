@@ -2,10 +2,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, AuthError } from '@/lib/auth/scope';
+import { UpdateComplaintSchema } from '@/lib/validation/schemas';
+import { validateInput } from '@/lib/validation/validate';
+import { logger } from '@/lib/logger';
 
 /**
  * PATCH /api/staff/complaints/[id]
- * Updates complaint status (RESOLVED | DISMISSED).
+ * Updates complaint status (RESOLVED | DISMISSED | PENDING).
  * In Next.js 16, route params is a Promise<{ id: string }>.
  */
 export async function PATCH(
@@ -23,15 +26,12 @@ export async function PATCH(
     }
 
     const { id } = await context.params;
-    const body = await request.json();
-    const { status } = body || {};
-
-    if (!status || !['RESOLVED', 'DISMISSED', 'PENDING'].includes(status)) {
-      return NextResponse.json(
-        { error: 'Valid status (RESOLVED, DISMISSED, PENDING) is required.' },
-        { status: 400 }
-      );
+    const rawBody = await request.json().catch(() => null);
+    const validation = validateInput(UpdateComplaintSchema, rawBody);
+    if (!validation.success) {
+      return validation.response;
     }
+    const { status } = validation.data;
 
     // Verify complaint belongs to school
     const complaint = await prisma.complaint.findUnique({
@@ -52,7 +52,7 @@ export async function PATCH(
     if (e instanceof AuthError) {
       return NextResponse.json({ error: e.message }, { status: e.statusCode });
     }
-    console.error('[api/staff/complaints/[id] PATCH]', e);
+    logger.error('[api/staff/complaints/[id] PATCH]', e);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

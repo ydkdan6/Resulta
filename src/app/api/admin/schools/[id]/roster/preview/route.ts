@@ -7,18 +7,37 @@ import {
   validateRosterRows,
   MAX_FILE_SIZE_BYTES,
 } from "@/lib/roster/parseAndValidate";
+import {
+  checkUploadRateLimit,
+  recordUpload,
+} from "@/modules/security/rateLimiter";
 
 export async function POST(
   request: NextRequest,
   context: { params: Promise<{ id: string }> },
 ) {
   try {
+    const ip =
+      request.headers.get('x-forwarded-for')?.split(',')[0].trim() ||
+      request.headers.get('x-real-ip') ||
+      '127.0.0.1';
+
     const session = await requireAuth(undefined, request);
     if (session.role !== "platform_admin") {
       throw new AuthError("Platform administrator privileges required.", 403);
     }
 
     const { id: schoolId } = await context.params;
+
+    const rateKey = `${ip}:${session.id}`;
+    const rateCheck = checkUploadRateLimit(rateKey);
+    if (!rateCheck.allowed) {
+      return NextResponse.json(
+        { error: rateCheck.message || 'Upload limit reached. Please wait before uploading another file.' },
+        { status: 429 }
+      );
+    }
+    recordUpload(rateKey);
 
     const school = await prisma.school.findUnique({
       where: { id: schoolId },

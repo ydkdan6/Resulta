@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireAuth, AuthError } from "@/lib/auth/scope";
+import { UnlockScoresSchema } from "@/lib/validation/schemas";
+import { validateInput } from "@/lib/validation/validate";
+import { logger } from "@/lib/logger";
+import { invalidatePublishedReports } from "@/modules/cache/cacheService";
 
 export async function POST(request: NextRequest) {
   try {
@@ -25,22 +29,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const body = await request.json();
-    const { classId, subjectId, termId, reason } = body || {};
-
-    if (!classId || !subjectId || !termId) {
-      return NextResponse.json(
-        { error: "classId, subjectId, and termId are required." },
-        { status: 400 }
-      );
+    const rawBody = await request.json().catch(() => null);
+    const validation = validateInput(UnlockScoresSchema, rawBody);
+    if (!validation.success) {
+      return validation.response;
     }
-
-    if (!reason || typeof reason !== "string" || !reason.trim()) {
-      return NextResponse.json(
-        { error: "A valid reason is required to unlock submitted scores." },
-        { status: 400 }
-      );
-    }
+    const { classId, subjectId, termId, reason } = validation.data;
 
     // 1. Verify Class & Tenant Isolation
     const classObj = await prisma.class.findUnique({
@@ -115,6 +109,9 @@ export async function POST(request: NextRequest) {
       return updateRes.count;
     });
 
+    // Invalidate report card cache when a score is unlocked
+    invalidatePublishedReports(session.school_id, termId);
+
     return NextResponse.json({
       success: true,
       unlocked_count: result,
@@ -124,7 +121,7 @@ export async function POST(request: NextRequest) {
     if (error instanceof AuthError) {
       return NextResponse.json({ error: error.message }, { status: error.statusCode });
     }
-    console.error("[api/staff/scores/unlock] Error:", error);
+    logger.error("[api/staff/scores/unlock] Error:", error);
     return NextResponse.json({ error: "Failed to unlock scores." }, { status: 500 });
   }
 }

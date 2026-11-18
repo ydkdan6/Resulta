@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireAuth, verifyTeacherAssignment, AuthError } from "@/lib/auth/scope";
 import { validateScores, DEFAULT_FALLBACK_SCHEME } from "@/lib/scores/validateScores";
+import { SaveScoresSchema } from "@/lib/validation/schemas";
+import { validateInput } from "@/lib/validation/validate";
+import { logger } from "@/lib/logger";
 
 export async function POST(request: NextRequest) {
   try {
@@ -14,15 +17,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const body = await request.json();
-    const { classId, subjectId, termId, scores: rows } = body || {};
-
-    if (!classId || !subjectId || !termId || !Array.isArray(rows)) {
-      return NextResponse.json(
-        { error: "classId, subjectId, termId, and scores array are required." },
-        { status: 400 }
-      );
+    const rawBody = await request.json().catch(() => null);
+    const zodResult = validateInput(SaveScoresSchema, rawBody);
+    if (!zodResult.success) {
+      return zodResult.response;
     }
+    const { classId, subjectId, termId, scores: rows } = zodResult.data;
 
     // 1. Verify Class & Tenant Isolation
     const classObj = await prisma.class.findUnique({
@@ -113,26 +113,26 @@ export async function POST(request: NextRequest) {
       : DEFAULT_FALLBACK_SCHEME;
 
     // 7. Validate Scores (Draft mode: partial scores allowed, but no invalid/over-max/duplicate/unknown)
-    const validation = validateScores({
+    const scoreValidation = validateScores({
       rows,
       scheme: gradingScheme,
       students: classObj.students,
       isSubmission: false,
     });
 
-    if (!validation.valid) {
+    if (!scoreValidation.valid) {
       return NextResponse.json(
-        { error: "Validation failed.", details: validation.errors },
+        { error: "Validation failed.", details: scoreValidation.errors },
         { status: 422 }
       );
     }
 
     // 8. Atomic database transaction to save draft results
-    const rowsToSave = validation.validatedRows.filter((r) => r.hasAnyScore);
+    const rowsToSave = scoreValidation.validatedRows.filter((r: any) => r.hasAnyScore);
 
     if (rowsToSave.length > 0) {
       await prisma.$transaction(
-        rowsToSave.map((row) =>
+        rowsToSave.map((row: any) =>
           prisma.result.upsert({
             where: {
               student_id_term_id_subject_id: {
@@ -175,7 +175,7 @@ export async function POST(request: NextRequest) {
     if (error instanceof AuthError) {
       return NextResponse.json({ error: error.message }, { status: error.statusCode });
     }
-    console.error("[api/staff/scores/save] Error:", error);
+    logger.error("[api/staff/scores/save] Error:", error);
     return NextResponse.json({ error: "Failed to save draft scores." }, { status: 500 });
   }
 }

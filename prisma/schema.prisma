@@ -180,6 +180,8 @@ model Student {
   @@index([school_id])
   @@index([class_id])
   @@index([admission_number])
+  @@index([school_id, class_id])
+  @@index([school_id, status])
 }
 
 model StudentImport {
@@ -222,6 +224,7 @@ model Term {
   @@index([school_id])
   @@index([session])
   @@index([status])
+  @@index([school_id, status])
 }
 
 model Result {
@@ -250,6 +253,9 @@ model Result {
   @@index([term_id])
   @@index([subject_id])
   @@index([status])
+  @@index([school_id, term_id, status])
+  @@index([student_id, term_id, status])
+  @@index([school_id, subject_id, term_id])
 }
 
 model StudentTermStatus {
@@ -270,6 +276,8 @@ model StudentTermStatus {
   @@index([school_id])
   @@index([student_id])
   @@index([term_id])
+  @@index([school_id, term_id, fees_paid])
+  @@index([student_id, term_id, result_locked])
 }
 
 model PaymentBatch {
@@ -292,6 +300,7 @@ model PaymentBatch {
   @@index([school_id])
   @@index([term_id])
   @@index([status])
+  @@index([school_id, term_id, status])
 }
 
 model Pin {
@@ -316,6 +325,9 @@ model Pin {
   @@index([student_id, term_id])
   @@index([pin_hash])
   @@index([status])
+  @@index([school_id, student_id])
+  @@index([school_id, term_id])
+  @@index([student_id, status])
 }
 
 model AuditLog {
@@ -357,6 +369,7 @@ model Complaint {
   @@index([student_id])
   @@index([term_id])
   @@index([status])
+  @@index([school_id, status])
 }
 
 model GradingScheme {
@@ -372,4 +385,5 @@ model GradingScheme {
   school School @relation(fields: [school_id], references: [id], onDelete: Cascade)
 
   @@index([school_id])
+  @@index([school_id, class_level])
 }

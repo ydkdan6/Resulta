@@ -36,6 +36,19 @@ function parseHost(rawHost: string): { slug: string | null; portal: Portal } {
   return { slug: null, portal: null };
 }
 
+function applySecurityHeaders(res: NextResponse): NextResponse {
+  res.headers.set("X-Content-Type-Options", "nosniff");
+  res.headers.set("X-Frame-Options", "DENY");
+  res.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
+  res.headers.set("Strict-Transport-Security", "max-age=63072000; includeSubDomains; preload");
+  res.headers.set("Permissions-Policy", "camera=(), microphone=(), geolocation=(), browsing-topics=()");
+  res.headers.set(
+    "Content-Security-Policy",
+    "default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: blob:; font-src 'self' data:; connect-src 'self' https:; frame-ancestors 'none';"
+  );
+  return res;
+}
+
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const host = request.headers.get("host") || request.nextUrl.host || "";
@@ -48,18 +61,20 @@ export async function middleware(request: NextRequest) {
   if (portal) requestHeaders.set("x-portal-type", portal);
 
   const pass = () =>
-    NextResponse.next({ request: { headers: requestHeaders } });
+    applySecurityHeaders(NextResponse.next({ request: { headers: requestHeaders } }));
   const json = (body: object, status: number) =>
-    NextResponse.json(body, { status });
+    applySecurityHeaders(NextResponse.json(body, { status }));
 
   // 1. Results address: decided first, before any login check.
   if (portal === "results") {
     if (pathname === "/") {
       const url = request.nextUrl.clone();
       url.pathname = `/${schoolSlug}`;
-      return NextResponse.rewrite(url, {
-        request: { headers: requestHeaders },
-      });
+      return applySecurityHeaders(
+        NextResponse.rewrite(url, {
+          request: { headers: requestHeaders },
+        })
+      );
     }
     if (
       pathname === "/favicon.ico" ||
@@ -67,7 +82,7 @@ export async function middleware(request: NextRequest) {
     ) {
       return pass();
     }
-    return new NextResponse("Not Found", { status: 404 });
+    return applySecurityHeaders(new NextResponse("Not Found", { status: 404 }));
   }
 
   // 2. Session
@@ -80,8 +95,13 @@ export async function middleware(request: NextRequest) {
     if (session.school_id) requestHeaders.set("x-user-school-id", session.school_id);
   }
 
-  // 2. Unauthenticated API calls should immediately return 401 (except auth routes).
-  if (pathname.startsWith("/api/") && !session && !pathname.startsWith("/api/auth/")) {
+  // 2. Unauthenticated API calls should immediately return 401 (except auth and public monitoring routes).
+  const isPublicApiRoute =
+    pathname.startsWith("/api/auth/") ||
+    pathname === "/api/health" ||
+    pathname.startsWith("/api/health/");
+
+  if (pathname.startsWith("/api/") && !session && !isPublicApiRoute) {
     return json({ error: "Unauthenticated" }, 401);
   }
 
@@ -100,11 +120,11 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  // 4. Unauthenticated API calls (login routes are exempt).
+  // 4. Unauthenticated API calls (login and public routes are exempt).
   if (
     pathname.startsWith("/api/") &&
     !session &&
-    !pathname.startsWith("/api/auth/")
+    !isPublicApiRoute
   ) {
     return json({ error: "Unauthenticated" }, 401);
   }

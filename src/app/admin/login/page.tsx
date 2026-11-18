@@ -33,16 +33,16 @@ export default function PlatformAdminLoginPage() {
         throw new Error("Forbidden: This portal is reserved for platform administrators.");
       }
 
-      router.push("/admin");
-      router.refresh();
+      // Immediate redirect without client-router race condition
+      window.location.href = data.redirectUrl || "/admin";
+      return;
     } catch (err: unknown) {
+      setLoading(false);
       if (err instanceof Error) {
         setError(err.message);
       } else {
         setError("An unexpected error occurred.");
       }
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -114,11 +114,18 @@ export default function PlatformAdminLoginPage() {
             </button>
           </form>
 
-          <div className="mt-6 pt-5 border-t border-[#F4F0E6] text-center text-xs text-[#6B645D]">
-            <span>Are you a school administrator or teacher? </span>
-            <a href="/staff/login" className="text-[#671B24] hover:underline font-medium">
-              Go to Staff Portal
-            </a>
+          <div className="mt-6 pt-5 border-t border-[#F4F0E6] text-center text-xs text-[#6B645D] space-y-2">
+            <div>
+              <span>Are you a school administrator or teacher? </span>
+              <a href="/staff/login" className="text-[#671B24] hover:underline font-medium">
+                Go to Staff Portal
+              </a>
+            </div>
+            <div>
+              <a href="/privacy" className="text-[11px] text-[#8C827A] hover:underline">
+                NDPA Privacy Notice & Data Protection Policy
+              </a>
+            </div>
           </div>
         </div>
       </div>

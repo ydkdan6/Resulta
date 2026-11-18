@@ -3,6 +3,15 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getParentSession } from '@/lib/auth/parentSession';
 import PDFDocument from 'pdfkit';
+import { logger } from '@/lib/logger';
+import {
+  checkPdfDownloadRateLimit,
+  recordPdfDownload,
+} from '@/modules/security/rateLimiter';
+import {
+  getCachedReportCard,
+  setCachedReportCard,
+} from '@/modules/cache/cacheService';
 
 /**
  * GET /api/parent/report-pdf?termId=
@@ -10,10 +19,25 @@ import PDFDocument from 'pdfkit';
  */
 export async function GET(request: NextRequest) {
   try {
+    const ip =
+      request.headers.get('x-forwarded-for')?.split(',')[0].trim() ||
+      request.headers.get('x-real-ip') ||
+      '127.0.0.1';
+
     const session = await getParentSession(request);
     if (!session) {
       return NextResponse.json({ error: 'Session expired or unauthenticated.' }, { status: 401 });
     }
+
+    const rateIdentifier = `${ip}:${session.student_id}`;
+    const rateCheck = checkPdfDownloadRateLimit(rateIdentifier);
+    if (!rateCheck.allowed) {
+      return NextResponse.json(
+        { error: rateCheck.message || 'PDF download limit reached. Please wait before downloading another report card.' },
+        { status: 429 }
+      );
+    }
+    recordPdfDownload(rateIdentifier);
 
     const { student_id, school_id, pin_session, pin_term_number } = session;
     const url = new URL(request.url);
@@ -75,6 +99,19 @@ export async function GET(request: NextRequest) {
 
     if (!school || !student) {
       return NextResponse.json({ error: 'Record not found.' }, { status: 404 });
+    }
+
+    // Check cache for pre-rendered PDF buffer
+    const cachedPdf = getCachedReportCard<Buffer>(school_id, student_id, `${termId}:pdf`);
+    if (cachedPdf) {
+      return new NextResponse(new Uint8Array(cachedPdf), {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/pdf',
+          'Content-Disposition': `attachment; filename="report-card-${student.admission_number.replace(/[^a-zA-Z0-9]/g, '_')}-term${term.term_number}.pdf"`,
+          'X-Cache': 'HIT',
+        },
+      });
     }
 
     // Generate PDF
@@ -197,6 +234,9 @@ export async function GET(request: NextRequest) {
       doc.end();
     });
 
+    // Cache the rendered PDF buffer
+    setCachedReportCard(school_id, student_id, `${termId}:pdf`, pdfBuffer);
+
     return new NextResponse(new Uint8Array(pdfBuffer), {
       status: 200,
       headers: {
@@ -205,7 +245,7 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (e: unknown) {
-    console.error('[api/parent/report-pdf GET]', e);
+    logger.error('[api/parent/report-pdf GET]', e);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

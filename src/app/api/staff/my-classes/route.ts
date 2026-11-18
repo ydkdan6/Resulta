@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { requireAuth, getTeacherAssignedClasses, AuthError } from '@/lib/auth/scope';
 import { prisma } from '@/lib/prisma';
+import { logger } from '@/lib/logger';
 
 
 
@@ -52,7 +53,7 @@ export async function GET() {
     if (error instanceof AuthError) {
       return NextResponse.json({ error: error.message }, { status: error.statusCode });
     }
-    console.error('Error fetching classes:', error);
+    logger.error('Error fetching classes:', error);
     return NextResponse.json({ error: 'Failed to retrieve classes.' }, { status: 500 });
   }
 }

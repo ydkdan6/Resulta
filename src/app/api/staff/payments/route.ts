@@ -2,6 +2,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, AuthError } from '@/lib/auth/scope';
+import { MarkPaymentsSchema } from '@/lib/validation/schemas';
+import { validateInput } from '@/lib/validation/validate';
+import { logger } from '@/lib/logger';
 import { Prisma } from '@prisma/client';
 
 /**
@@ -104,7 +107,7 @@ export async function GET(request: NextRequest) {
     if (e instanceof AuthError) {
       return NextResponse.json({ error: e.message }, { status: e.statusCode });
     }
-    console.error('[api/staff/payments GET]', e);
+    logger.error('[api/staff/payments GET]', e);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
@@ -125,15 +128,12 @@ export async function POST(request: NextRequest) {
       throw new AuthError('School context missing.', 400);
     }
 
-    const body = await request.json();
-    const { termId, studentIds, createBatch } = body || {};
-
-    if (!termId || !Array.isArray(studentIds) || studentIds.length === 0) {
-      return NextResponse.json(
-        { error: 'termId and a non-empty studentIds array are required.' },
-        { status: 400 }
-      );
+    const rawBody = await request.json().catch(() => null);
+    const validation = validateInput(MarkPaymentsSchema, rawBody);
+    if (!validation.success) {
+      return validation.response;
     }
+    const { termId, studentIds, createBatch } = validation.data;
 
     // Verify term belongs to school
     const term = await prisma.term.findUnique({ where: { id: termId } });
@@ -250,7 +250,7 @@ export async function POST(request: NextRequest) {
     if (e instanceof AuthError) {
       return NextResponse.json({ error: e.message }, { status: e.statusCode });
     }
-    console.error('[api/staff/payments POST]', e);
+    logger.error('[api/staff/payments POST]', e);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireAuth, verifyTeacherAssignment, AuthError } from "@/lib/auth/scope";
+import { DeleteScoresSchema } from "@/lib/validation/schemas";
+import { validateInput } from "@/lib/validation/validate";
+import { logger } from "@/lib/logger";
 
 export async function POST(request: NextRequest) {
   try {
@@ -13,15 +16,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const body = await request.json();
-    const { classId, subjectId, termId, studentIds } = body || {};
-
-    if (!classId || !subjectId || !termId || !Array.isArray(studentIds) || studentIds.length === 0) {
-      return NextResponse.json(
-        { error: "classId, subjectId, termId, and non-empty studentIds array are required." },
-        { status: 400 }
-      );
+    const rawBody = await request.json().catch(() => null);
+    const validation = validateInput(DeleteScoresSchema, rawBody);
+    if (!validation.success) {
+      return validation.response;
     }
+    const { classId, subjectId, termId, studentIds } = validation.data;
 
     // 1. Verify Class & Tenant Isolation
     const classObj = await prisma.class.findUnique({
@@ -100,7 +100,7 @@ export async function POST(request: NextRequest) {
     if (error instanceof AuthError) {
       return NextResponse.json({ error: error.message }, { status: error.statusCode });
     }
-    console.error("[api/staff/scores/delete] Error:", error);
+    logger.error("[api/staff/scores/delete] Error:", error);
     return NextResponse.json({ error: "Failed to delete score records." }, { status: 500 });
   }
 }

@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
+import dynamic from "next/dynamic";
 import {
   GraduationCap,
   Download,
@@ -12,8 +13,14 @@ import {
   BookOpen,
   Send,
   X,
-  FileText
+  FileText,
+  Eye,
 } from "lucide-react";
+
+const LazyReportCardPreviewModal = dynamic(
+  () => import("@/components/ReportCardPreviewModal"),
+  { ssr: false }
+);
 
 interface SubjectResult {
   subject: string;
@@ -62,6 +69,7 @@ export default function ParentPortalClient({
   } | null>(null);
   const [terms, setTerms] = useState<TermReport[]>([]);
   const [activeTermId, setActiveTermId] = useState<string>("");
+  const [showPreviewModal, setShowPreviewModal] = useState<boolean>(false);
 
   // Problem Report Form State
   const [showProblemModal, setShowProblemModal] = useState(false);
@@ -410,14 +418,23 @@ export default function ParentPortalClient({
           </div>
 
           {selectedTerm && (
-            <a
-              href={`/api/parent/report-pdf?termId=${selectedTerm.id}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="px-3 py-2 bg-[#3F4E40] hover:bg-[#344035] text-white text-xs font-mono rounded-sm font-medium flex items-center justify-center gap-1.5 shrink-0"
-            >
-              <Download className="w-3.5 h-3.5" /> Download Report Card PDF
-            </a>
+            <div className="flex flex-wrap items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => setShowPreviewModal(true)}
+                className="px-3 py-2 bg-white border border-[#D1CCC2] hover:bg-gray-50 text-[#2C2825] text-xs font-mono rounded-sm font-medium flex items-center justify-center gap-1.5 transition-colors"
+              >
+                <Eye className="w-3.5 h-3.5 text-[#3F4E40]" /> Preview Card
+              </button>
+              <a
+                href={`/api/parent/report-pdf?termId=${selectedTerm.id}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="px-3 py-2 bg-[#3F4E40] hover:bg-[#344035] text-white text-xs font-mono rounded-sm font-medium flex items-center justify-center gap-1.5 transition-colors"
+              >
+                <Download className="w-3.5 h-3.5" /> Download PDF
+              </a>
+            </div>
           )}
         </div>
 
@@ -525,6 +542,20 @@ export default function ParentPortalClient({
           <div className="p-8 text-center bg-white border border-[#E9E4D9] rounded-sm text-xs font-mono text-[#6B645D]">
             No published results available for your card.
           </div>
+        )}
+        {showPreviewModal && selectedTerm && (
+          <LazyReportCardPreviewModal
+            isOpen={showPreviewModal}
+            onClose={() => setShowPreviewModal(false)}
+            schoolName={schoolName}
+            studentName={student?.full_name || ""}
+            admissionNumber={student?.admission_number || ""}
+            className={student?.class?.name || "Class"}
+            termName={selectedTerm.name}
+            session={selectedTerm.session}
+            termId={selectedTerm.id}
+            subjects={selectedTerm.subjects || []}
+          />
         )}
       </main>
 

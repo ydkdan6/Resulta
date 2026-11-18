@@ -7,12 +7,13 @@ import {
   GradingSchemeSchema,
   UpdateGradingSchemeSchema,
 } from "@/lib/validation/gradingScheme";
+import { logger } from "@/lib/logger";
 
 function handleError(e: unknown) {
   if (e instanceof AuthError) {
     return NextResponse.json({ error: e.message }, { status: e.statusCode });
   }
-  console.error("[api/admin/grading-scheme]", e);
+  logger.error("[api/admin/grading-scheme]", e);
   return NextResponse.json({ error: "Internal server error" }, { status: 500 });
 }
 

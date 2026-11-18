@@ -3,12 +3,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireAuth, requireTeacher, AuthError } from "@/lib/auth/scope";
+import { logger } from "@/lib/logger";
 
 function handleError(e: unknown) {
   if (e instanceof AuthError) {
     return NextResponse.json({ error: e.message }, { status: e.statusCode });
   }
-  console.error("[api/staff/grading-scheme]", e);
+  logger.error("[api/staff/grading-scheme]", e);
   return NextResponse.json({ error: "Internal server error" }, { status: 500 });
 }
 

@@ -154,6 +154,7 @@ export default function ScoreEntryClient({
 
   // File upload ref
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const draftSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Helper to show floating toast notifications
   const showToast = (title: string, message: string, type: "success" | "error" | "info" = "success") => {
@@ -529,16 +530,19 @@ export default function ScoreEntryClient({
           : r
       );
 
-      // Auto-save in localStorage so progress is preserved across refreshes
+      // Debounced auto-save in localStorage so progress is preserved without blocking the main UI thread
       if (selectedClassId && selectedSubjectId && selectedTermId) {
-        try {
-          const draftStorageKey = `resulta_draft_${selectedClassId}_${selectedSubjectId}_${selectedTermId}`;
-          const saveObj: Record<string, Record<string, string>> = {};
-          for (const row of updated) {
-            saveObj[row.student_id] = row.scores;
-          }
-          localStorage.setItem(draftStorageKey, JSON.stringify(saveObj));
-        } catch (e) {}
+        if (draftSaveTimerRef.current) clearTimeout(draftSaveTimerRef.current);
+        draftSaveTimerRef.current = setTimeout(() => {
+          try {
+            const draftStorageKey = `resulta_draft_${selectedClassId}_${selectedSubjectId}_${selectedTermId}`;
+            const saveObj: Record<string, Record<string, string>> = {};
+            for (const row of updated) {
+              saveObj[row.student_id] = row.scores;
+            }
+            localStorage.setItem(draftStorageKey, JSON.stringify(saveObj));
+          } catch (e) {}
+        }, 400);
       }
 
       return updated;

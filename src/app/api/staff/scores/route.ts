@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireAuth, verifyTeacherAssignment, AuthError } from "@/lib/auth/scope";
 import { DEFAULT_FALLBACK_SCHEME } from "@/lib/scores/validateScores";
+import { logger } from "@/lib/logger";
 
 export async function GET(request: NextRequest) {
   try {
@@ -154,7 +155,7 @@ export async function GET(request: NextRequest) {
     if (error instanceof AuthError) {
       return NextResponse.json({ error: error.message }, { status: error.statusCode });
     }
-    console.error("[api/staff/scores] Error:", error);
+    logger.error("[api/staff/scores] Error:", error);
     return NextResponse.json({ error: "Failed to fetch scores." }, { status: 500 });
   }
 }

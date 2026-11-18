@@ -5,6 +5,9 @@ import { requireAuth, AuthError } from '@/lib/auth/scope';
 import { generateRandomPin, hashPin } from '@/lib/auth/pin';
 import { generatePinCardsPdf } from '@/lib/cards/generatePdf';
 import { platformConfig } from '@/lib/config';
+import { ReprintPinSchema } from '@/lib/validation/schemas';
+import { validateInput } from '@/lib/validation/validate';
+import { logger } from '@/lib/logger';
 
 /**
  * POST /api/staff/pins/reprint
@@ -27,22 +30,12 @@ export async function POST(request: NextRequest) {
       throw new AuthError('School context missing.', 400);
     }
 
-    const body = await request.json();
-    const { studentId, termId, reason, returnPdf } = body || {};
-
-    if (!studentId || !termId) {
-      return NextResponse.json(
-        { error: 'studentId and termId are required.' },
-        { status: 400 }
-      );
+    const rawBody = await request.json().catch(() => null);
+    const validation = validateInput(ReprintPinSchema, rawBody);
+    if (!validation.success) {
+      return validation.response;
     }
-
-    if (!reason || typeof reason !== 'string' || reason.trim().length < 5) {
-      return NextResponse.json(
-        { error: 'A valid reason (minimum 5 characters) is required for reprint.' },
-        { status: 400 }
-      );
-    }
+    const { studentId, termId, reason, returnPdf } = validation.data;
 
     // 1. Verify student and term belong to school
     const [student, term, school] = await Promise.all([
@@ -197,7 +190,7 @@ export async function POST(request: NextRequest) {
     if (e instanceof AuthError) {
       return NextResponse.json({ error: e.message }, { status: e.statusCode });
     }
-    console.error('[api/staff/pins/reprint POST]', e);
+    logger.error('[api/staff/pins/reprint POST]', e);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

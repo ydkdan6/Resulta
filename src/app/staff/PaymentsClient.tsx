@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import {
   CreditCard,
   Lock,
@@ -92,6 +92,8 @@ export default function PaymentsClient({ schoolName }: Props) {
   const [searchQuery, setSearchQuery] = useState("");
   const [filterPaid, setFilterPaid] = useState<"all" | "paid" | "unpaid">("all");
   const [selectedStudentIds, setSelectedStudentIds] = useState<Set<string>>(new Set());
+  const [page, setPage] = useState<number>(1);
+  const pageSize = 25;
 
   // PIN generation modal/results
   const [generatedPins, setGeneratedPins] = useState<GeneratedPinItem[] | null>(null);
@@ -372,17 +374,24 @@ export default function PaymentsClient({ schoolName }: Props) {
   };
 
   // Filtering students
-  const filteredStudents = students.filter((s) => {
-    const matchesSearch =
-      s.full_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      s.admission_number.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      s.class_name.toLowerCase().includes(searchQuery.toLowerCase());
+  const filteredStudents = useMemo<StudentPaymentRow[]>(() => {
+    return students.filter((s: StudentPaymentRow) => {
+      const matchesSearch =
+        s.full_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        s.admission_number.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        s.class_name.toLowerCase().includes(searchQuery.toLowerCase());
 
-    const matchesPaid =
-      filterPaid === "all" ? true : filterPaid === "paid" ? s.fees_paid : !s.fees_paid;
+      const matchesPaid =
+        filterPaid === "all" ? true : filterPaid === "paid" ? s.fees_paid : !s.fees_paid;
 
-    return matchesSearch && matchesPaid;
-  });
+      return matchesSearch && matchesPaid;
+    });
+  }, [students, searchQuery, filterPaid]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredStudents.length / pageSize));
+  const paginatedStudents = useMemo<StudentPaymentRow[]>(() => {
+    return filteredStudents.slice((page - 1) * pageSize, page * pageSize);
+  }, [filteredStudents, page, pageSize]);
 
   const toggleSelectStudent = (id: string) => {
     const next = new Set(selectedStudentIds);
@@ -395,7 +404,7 @@ export default function PaymentsClient({ schoolName }: Props) {
     if (selectedStudentIds.size === filteredStudents.length) {
       setSelectedStudentIds(new Set());
     } else {
-      setSelectedStudentIds(new Set(filteredStudents.map((s) => s.id)));
+      setSelectedStudentIds(new Set(filteredStudents.map((s: StudentPaymentRow) => s.id)));
     }
   };
 
@@ -678,12 +687,18 @@ export default function PaymentsClient({ schoolName }: Props) {
               type="text"
               placeholder="Search student or admission no..."
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setPage(1);
+              }}
               className="px-3 py-1.5 text-xs font-mono border border-[#D1CCC2] rounded-sm w-64 focus:outline-none focus:border-[#3F4E40]"
             />
             <select
               value={filterPaid}
-              onChange={(e) => setFilterPaid(e.target.value as "all" | "paid" | "unpaid")}
+              onChange={(e) => {
+                setFilterPaid(e.target.value as "all" | "paid" | "unpaid");
+                setPage(1);
+              }}
               className="px-3 py-1.5 text-xs font-mono border border-[#D1CCC2] rounded-sm text-[#2C2825] focus:outline-none focus:border-[#3F4E40]"
             >
               <option value="all">All Payment Statuses</option>
@@ -773,7 +788,7 @@ export default function PaymentsClient({ schoolName }: Props) {
                   </td>
                 </tr>
               ) : (
-                filteredStudents.map((s) => (
+                paginatedStudents.map((s: StudentPaymentRow) => (
                   <tr key={s.id} className="hover:bg-[#FAF8F3]">
                     <td className="py-2 px-3">
                       <input
@@ -849,6 +864,37 @@ export default function PaymentsClient({ schoolName }: Props) {
             </tbody>
           </table>
         </div>
+
+        {/* Pagination bar */}
+        {filteredStudents.length > 0 && (
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-3 border-t border-[#E9E4D9] text-xs font-mono text-[#6B645D]">
+            <div>
+              Showing {Math.min((page - 1) * pageSize + 1, filteredStudents.length)} to{" "}
+              {Math.min(page * pageSize, filteredStudents.length)} of {filteredStudents.length} students
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={page <= 1}
+                className="px-2.5 py-1 border border-[#D1CCC2] bg-white rounded-xs text-[#2C2825] disabled:opacity-40 hover:bg-[#FAF8F3] cursor-pointer"
+              >
+                Previous
+              </button>
+              <span className="text-[#2C2825] font-semibold">
+                Page {page} of {totalPages}
+              </span>
+              <button
+                type="button"
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                disabled={page >= totalPages}
+                className="px-2.5 py-1 border border-[#D1CCC2] bg-white rounded-xs text-[#2C2825] disabled:opacity-40 hover:bg-[#FAF8F3] cursor-pointer"
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Bottom Grid: Payment Batches & Complaints Queue */}

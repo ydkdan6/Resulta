@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireAuth, verifyTeacherAssignment, AuthError } from "@/lib/auth/scope";
 import { validateScores, DEFAULT_FALLBACK_SCHEME } from "@/lib/scores/validateScores";
+import { SubmitScoresSchema } from "@/lib/validation/schemas";
+import { validateInput } from "@/lib/validation/validate";
+import { logger } from "@/lib/logger";
+import { recordAuditLog } from "@/lib/audit";
+import { invalidatePublishedReports } from "@/modules/cache/cacheService";
 
 export async function POST(request: NextRequest) {
   try {
@@ -14,32 +19,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const body = await request.json();
-    const { classId, subjectId, termId, confirmed, scores: rows } = body || {};
-
-    if (!classId || !subjectId || !termId) {
-      return NextResponse.json(
-        { error: "classId, subjectId, and termId are required." },
-        { status: 400 }
-      );
+    const rawBody = await request.json().catch(() => null);
+    const zodResult = validateInput(SubmitScoresSchema, rawBody);
+    if (!zodResult.success) {
+      return zodResult.response;
     }
-
-    if (!confirmed) {
-      return NextResponse.json(
-        {
-          error:
-            "Confirmation required: Please tick the confirmation box certifying that all scores have been verified twice.",
-        },
-        { status: 400 }
-      );
-    }
-
-    if (!Array.isArray(rows) || rows.length === 0) {
-      return NextResponse.json(
-        { error: "Scores list cannot be empty for submission." },
-        { status: 400 }
-      );
-    }
+    const { classId, subjectId, termId, confirmed, scores: rows } = zodResult.data;
 
     // 1. Verify Class & Tenant Isolation
     const classObj = await prisma.class.findUnique({
@@ -130,23 +115,23 @@ export async function POST(request: NextRequest) {
       : DEFAULT_FALLBACK_SCHEME;
 
     // 7. Strict Submission Validation: missing scores, over-max, duplicates, unknown students
-    const validation = validateScores({
+    const scoreValidation = validateScores({
       rows,
       scheme: gradingScheme,
       students: classObj.students,
       isSubmission: true,
     });
 
-    if (!validation.valid) {
+    if (!scoreValidation.valid) {
       return NextResponse.json(
-        { error: "Submission rejected due to validation errors.", details: validation.errors },
+        { error: "Submission rejected due to validation errors.", details: scoreValidation.errors },
         { status: 422 }
       );
     }
 
     // 8. Atomic transaction to write SUBMITTED scores
     await prisma.$transaction(
-      validation.validatedRows.map((row) =>
+      scoreValidation.validatedRows.map((row: any) =>
         prisma.result.upsert({
           where: {
             student_id_term_id_subject_id: {
@@ -179,9 +164,28 @@ export async function POST(request: NextRequest) {
       )
     );
 
+    // Record audit log for score submission
+    await recordAuditLog({
+      action: "SCORE_SUBMIT",
+      schoolId: session.school_id,
+      userId: session.id,
+      entity: "Result",
+      entityId: `${classId}:${subjectId}:${termId}`,
+      newValues: {
+        class_id: classId,
+        subject_id: subjectId,
+        term_id: termId,
+        count: scoreValidation.validatedRows.length,
+        status: "SUBMITTED",
+      },
+    });
+
+    // Invalidate report card cache when scores are submitted / republished
+    invalidatePublishedReports(session.school_id, termId);
+
     return NextResponse.json({
       success: true,
-      count: validation.validatedRows.length,
+      count: scoreValidation.validatedRows.length,
       status: "SUBMITTED",
       message: "Scores have been submitted and locked successfully.",
     });
@@ -189,7 +193,7 @@ export async function POST(request: NextRequest) {
     if (error instanceof AuthError) {
       return NextResponse.json({ error: error.message }, { status: error.statusCode });
     }
-    console.error("[api/staff/scores/submit] Error:", error);
+    logger.error("[api/staff/scores/submit] Error:", error);
     return NextResponse.json({ error: "Failed to submit scores." }, { status: 500 });
   }
 }

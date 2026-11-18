@@ -3,6 +3,9 @@ import { requirePlatformAdmin, AuthError } from '@/lib/auth/scope';
 import { hashPassword, generateTemporaryPassword } from '@/lib/auth/password';
 import { prisma } from '@/lib/prisma';
 import { Role } from '@prisma/client';
+import { logger } from '@/lib/logger';
+import { AdminCreateTeacherSchema } from '@/lib/validation/schemas';
+import { validateInput } from '@/lib/validation/validate';
 
 export async function GET(request: NextRequest) {
   try {
@@ -49,12 +52,15 @@ export async function POST(request: NextRequest) {
     // Explicit rule: school_admin CANNOT create teachers. Only platform_admin can.
     await requirePlatformAdmin();
 
-    const body = await request.json();
-    const { school_id, name, email, password } = body;
-
-    if (!school_id || !name || !email) {
+    const rawBody = await request.json().catch(() => null);
+    const validation = validateInput(AdminCreateTeacherSchema, rawBody);
+    if (!validation.success) {
+      return validation.response;
+    }
+    const { school_id, name, email, password } = validation.data;
+    if (!email) {
       return NextResponse.json(
-        { error: 'School ID, name, and email are required to create a teacher.' },
+        { error: 'Email is required to create a teacher.' },
         { status: 400 }
       );
     }
@@ -111,7 +117,7 @@ export async function POST(request: NextRequest) {
     if (error instanceof AuthError) {
       return NextResponse.json({ error: error.message }, { status: error.statusCode });
     }
-    console.error('Create teacher error:', error);
+    logger.error('Create teacher error:', error);
     return NextResponse.json({ error: 'Failed to create teacher.' }, { status: 500 });
   }
 }

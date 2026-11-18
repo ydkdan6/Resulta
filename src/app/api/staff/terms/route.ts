@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireAuth, AuthError } from "@/lib/auth/scope";
+import { logger } from "@/lib/logger";
 
 export async function GET(request: NextRequest) {
   try {
@@ -50,7 +51,7 @@ export async function GET(request: NextRequest) {
     if (error instanceof AuthError) {
       return NextResponse.json({ error: error.message }, { status: error.statusCode });
     }
-    console.error("[api/staff/terms] Error:", error);
+    logger.error("[api/staff/terms] Error:", error);
     return NextResponse.json({ error: "Failed to fetch school terms." }, { status: 500 });
   }
 }

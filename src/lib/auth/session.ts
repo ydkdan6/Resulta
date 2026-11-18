@@ -83,14 +83,17 @@ export async function getSession(request?: NextRequest): Promise<SessionUser | n
  */
 export async function setSessionCookie(token: string): Promise<void> {
   const cookieStore = await cookies();
-  const isProduction = process.env.NODE_ENV === 'production';
+  const isSecure =
+    process.env.NODE_ENV === "production" ||
+    process.env.COOKIE_SECURE === "true" ||
+    process.env.HTTPS === "on";
 
   cookieStore.set(SESSION_COOKIE_NAME, token, {
     httpOnly: true,
-    secure: isProduction,
-    sameSite: 'lax',
+    secure: isSecure,
+    sameSite: "lax",
     maxAge: SESSION_DURATION,
-    path: '/',
+    path: "/",
   });
 }
 
@@ -99,7 +102,18 @@ export async function setSessionCookie(token: string): Promise<void> {
  */
 export async function clearSessionCookie(): Promise<void> {
   const cookieStore = await cookies();
-  cookieStore.delete(SESSION_COOKIE_NAME);
+  const isSecure =
+    process.env.NODE_ENV === "production" ||
+    process.env.COOKIE_SECURE === "true" ||
+    process.env.HTTPS === "on";
+
+  cookieStore.set(SESSION_COOKIE_NAME, "", {
+    httpOnly: true,
+    secure: isSecure,
+    sameSite: "lax",
+    maxAge: 0,
+    path: "/",
+  });
 }
 
 export { SESSION_COOKIE_NAME };

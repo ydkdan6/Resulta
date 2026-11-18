@@ -2,6 +2,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { verifyPin } from '@/lib/auth/pin';
+import { logger } from '@/lib/logger';
+import { ResultsLoginSchema } from '@/lib/validation/schemas';
+import { validateInput } from '@/lib/validation/validate';
 
 /**
  * POST /api/results/login
@@ -19,15 +22,12 @@ import { verifyPin } from '@/lib/auth/pin';
  */
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
-    const { schoolSlug, admissionNumber, pin } = body || {};
-
-    if (!schoolSlug || !admissionNumber || !pin) {
-      return NextResponse.json(
-        { error: 'schoolSlug, admissionNumber, and pin are required.' },
-        { status: 400 }
-      );
+    const rawBody = await request.json().catch(() => null);
+    const validation = validateInput(ResultsLoginSchema, rawBody);
+    if (!validation.success) {
+      return validation.response;
     }
+    const { schoolSlug, admissionNumber, pin } = validation.data;
 
     // 1. Find school
     const school = await prisma.school.findUnique({
@@ -134,7 +134,7 @@ export async function POST(request: NextRequest) {
       logins_remaining: matchedPin.max_logins - (matchedPin.logins_used + 1),
     });
   } catch (e: unknown) {
-    console.error('[api/results/login POST]', e);
+    logger.error('[api/results/login POST]', e);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

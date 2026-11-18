@@ -5,6 +5,9 @@ import { requireAuth, AuthError } from '@/lib/auth/scope';
 import { generateRandomPin, hashPin } from '@/lib/auth/pin';
 import { generatePinCardsPdf, CardData } from '@/lib/cards/generatePdf';
 import { platformConfig } from '@/lib/config';
+import { GeneratePinsSchema } from '@/lib/validation/schemas';
+import { validateInput } from '@/lib/validation/validate';
+import { logger } from '@/lib/logger';
 
 /**
  * POST /api/staff/pins/generate
@@ -30,15 +33,12 @@ export async function POST(request: NextRequest) {
       throw new AuthError('School context missing.', 400);
     }
 
-    const body = await request.json();
-    const { termId, studentIds, batchId, returnPdf } = body || {};
-
-    if (!termId) {
-      return NextResponse.json(
-        { error: 'termId is required.' },
-        { status: 400 }
-      );
+    const rawBody = await request.json().catch(() => null);
+    const validation = validateInput(GeneratePinsSchema, rawBody);
+    if (!validation.success) {
+      return validation.response;
     }
+    const { termId, studentIds, batchId, returnPdf } = validation.data;
 
     // 1. Verify term belongs to school
     const term = await prisma.term.findUnique({
@@ -288,7 +288,7 @@ export async function POST(request: NextRequest) {
     if (e instanceof AuthError) {
       return NextResponse.json({ error: e.message }, { status: e.statusCode });
     }
-    console.error('[api/staff/pins/generate POST]', e);
+    logger.error('[api/staff/pins/generate POST]', e);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

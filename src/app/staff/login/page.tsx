@@ -29,26 +29,22 @@ export default function StaffLoginPage() {
         throw new Error(data.error || "Authentication failed.");
       }
 
+      let target = "/staff";
       if (data.user.role === "platform_admin") {
-        router.push("/admin");
+        target = "/admin";
       } else if (data.user.role === "teacher") {
-        if (data.user.must_change_password) {
-          router.push("/staff/change-password");
-        } else {
-          router.push("/staff/my-classes");
-        }
-      } else {
-        router.push("/staff");
+        target = data.user.must_change_password ? "/staff/change-password" : "/staff/my-classes";
       }
-      router.refresh();
+
+      window.location.href = target;
+      return;
     } catch (err: unknown) {
+      setLoading(false);
       if (err instanceof Error) {
         setError(err.message);
       } else {
         setError("An unexpected error occurred.");
       }
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -120,11 +116,18 @@ export default function StaffLoginPage() {
             </button>
           </form>
 
-          <div className="mt-6 pt-5 border-t border-[#F4F0E6] text-center text-xs text-[#6B645D]">
-            <span>Platform administrator? </span>
-            <a href="/admin/login" className="text-[#671B24] hover:underline font-medium">
-              Platform Admin Login
-            </a>
+          <div className="mt-6 pt-5 border-t border-[#F4F0E6] text-center text-xs text-[#6B645D] space-y-2">
+            <div>
+              <span>Platform administrator? </span>
+              <a href="/admin/login" className="text-[#671B24] hover:underline font-medium">
+                Platform Admin Login
+              </a>
+            </div>
+            <div>
+              <a href="/privacy" className="text-[11px] text-[#8C827A] hover:underline">
+                NDPA Privacy Notice & Data Protection Policy
+              </a>
+            </div>
           </div>
         </div>
       </div>

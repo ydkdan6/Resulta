@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { Prisma } from '@prisma/client';
 import { requirePlatformAdmin, AuthError } from '@/lib/auth/scope';
 import { prisma } from '@/lib/prisma';
+import { logger } from '@/lib/logger';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -79,16 +80,30 @@ async function processLogoUpload(formData: FormData): Promise<string | null> {
 }
 
 // ---------------------------------------------------------------------------
-// GET – list schools (admin only)
+// GET – list schools (admin only) — paginated
 // ---------------------------------------------------------------------------
 export async function GET(request?: NextRequest) {
   try {
     await requirePlatformAdmin(undefined, request);
-    const schools = await prisma.school.findMany({
-      orderBy: { created_at: 'desc' },
-      include: { _count: { select: { users: true, classes: true, students: true } } },
-    });
-    return NextResponse.json({ schools });
+
+    // Pagination: ?page=1&pageSize=50 (default 50, max 200)
+    const url = request ? new URL(request.url) : null;
+    const page = Math.max(1, Number(url?.searchParams.get('page') ?? '1') || 1);
+    const rawPageSize = Number(url?.searchParams.get('pageSize') ?? '50') || 50;
+    const pageSize = Math.min(200, Math.max(1, rawPageSize));
+    const skip = (page - 1) * pageSize;
+
+    const [schools, total] = await Promise.all([
+      prisma.school.findMany({
+        orderBy: { created_at: 'desc' },
+        skip,
+        take: pageSize,
+        include: { _count: { select: { users: true, classes: true, students: true } } },
+      }),
+      prisma.school.count(),
+    ]);
+
+    return NextResponse.json({ schools, total, page, pageSize });
   } catch (err) {
     if (err instanceof AuthError) {
       return NextResponse.json({ error: err.message }, { status: err.statusCode });
@@ -169,7 +184,7 @@ export async function POST(request: NextRequest) {
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
       return NextResponse.json({ error: 'Slug must be unique.' }, { status: 400 });
     }
-    console.error('Create school error:', err);
+    logger.error('Create school error:', err);
     return NextResponse.json({ error: 'Failed to create school.' }, { status: 500 });
   }
 }

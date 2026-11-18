@@ -2,6 +2,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth, AuthError } from '@/lib/auth/scope';
+import { WithholdResultSchema } from '@/lib/validation/schemas';
+import { validateInput } from '@/lib/validation/validate';
+import { logger } from '@/lib/logger';
 
 /**
  * PATCH /api/staff/payments/withhold
@@ -19,15 +22,12 @@ export async function PATCH(request: NextRequest) {
       throw new AuthError('School context missing.', 400);
     }
 
-    const body = await request.json();
-    const { studentId, termId, withheld } = body || {};
-
-    if (!studentId || !termId || typeof withheld !== 'boolean') {
-      return NextResponse.json(
-        { error: 'studentId, termId, and withheld (boolean) are required.' },
-        { status: 400 }
-      );
+    const rawBody = await request.json().catch(() => null);
+    const validation = validateInput(WithholdResultSchema, rawBody);
+    if (!validation.success) {
+      return validation.response;
     }
+    const { studentId, termId, withheld } = validation.data;
 
     // Verify student belongs to school
     const student = await prisma.student.findUnique({
@@ -90,7 +90,7 @@ export async function PATCH(request: NextRequest) {
     if (e instanceof AuthError) {
       return NextResponse.json({ error: e.message }, { status: e.statusCode });
     }
-    console.error('[api/staff/payments/withhold PATCH]', e);
+    logger.error('[api/staff/payments/withhold PATCH]', e);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
