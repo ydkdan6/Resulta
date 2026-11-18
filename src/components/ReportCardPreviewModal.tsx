@@ -25,17 +25,7 @@ interface Props {
   termId: string;
   subjects: SubjectResult[];
 }
-  isOpen: boolean;
-  onClose: () => void;
-  schoolName: string;
-  studentName: string;
-  admissionNumber: string;
-  className: string;
-  termName: string;
-  session: string;
-  termId: string;
-  subjects: SubjectResult[];
-}
+
 
 export default function ReportCardPreviewModal({
   isOpen,
@@ -50,17 +40,7 @@ export default function ReportCardPreviewModal({
   termId,
   subjects,
 }: Props) {
-  isOpen,
-  onClose,
-  schoolName,
-  studentName,
-  admissionNumber,
-  className,
-  termName,
-  session,
-  termId,
-  subjects,
-}: Props) {
+
   const [downloading, setDownloading] = useState(false);
 
   useEffect(() => {
