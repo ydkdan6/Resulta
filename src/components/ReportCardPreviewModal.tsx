@@ -16,6 +16,18 @@ interface Props {
   isOpen: boolean;
   onClose: () => void;
   schoolName: string;
+  schoolLogoUrl?: string;
+  studentName: string;
+  admissionNumber: string;
+  className: string;
+  termName: string;
+  session: string;
+  termId: string;
+  subjects: SubjectResult[];
+}
+  isOpen: boolean;
+  onClose: () => void;
+  schoolName: string;
   studentName: string;
   admissionNumber: string;
   className: string;
@@ -26,6 +38,18 @@ interface Props {
 }
 
 export default function ReportCardPreviewModal({
+  isOpen,
+  onClose,
+  schoolName,
+  schoolLogoUrl,
+  studentName,
+  admissionNumber,
+  className,
+  termName,
+  session,
+  termId,
+  subjects,
+}: Props) {
   isOpen,
   onClose,
   schoolName,
@@ -61,6 +85,9 @@ export default function ReportCardPreviewModal({
         {/* Header */}
         <div className="px-5 py-4 border-b border-[#E9E4D9] flex items-center justify-between bg-[#FAF8F3]">
           <div className="flex items-center gap-2">
+            {schoolLogoUrl && (
+              <img src={schoolLogoUrl} alt="School Logo" className="h-8 w-8 object-contain" />
+            )}
             <FileText className="w-5 h-5 text-[#3F4E40]" />
             <div>
               <h3 className="text-sm font-serif font-bold text-[#2C2825]">Report Card Preview</h3>
