@@ -33,6 +33,24 @@ export default function AuditLogViewer({ portalType, schoolId, schools = [] }: P
   const [selectedAction, setSelectedAction] = useState<string>("");
   const [expandedLogId, setExpandedLogId] = useState<string | null>(null);
 
+  const formatTimestamp = (raw: unknown) => {
+    if (!raw) return "—";
+    if (typeof raw === "object" && !(raw instanceof Date)) return "—";
+    try {
+      const d = new Date(raw as string | number | Date);
+      if (isNaN(d.getTime())) return "—";
+      return d.toLocaleString("en-GB", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+    } catch {
+      return "—";
+    }
+  };
+
   const fetchLogs = async () => {
     try {
       setLoading(true);
@@ -189,13 +207,7 @@ export default function AuditLogViewer({ portalType, schoolId, schools = [] }: P
                       )}
                     </td>
                     <td className="py-2.5 px-3 font-mono text-[#47423D] whitespace-nowrap">
-                      {new Date(log.timestamp).toLocaleString("en-GB", {
-                        day: "2-digit",
-                        month: "short",
-                        year: "numeric",
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })}
+                      {formatTimestamp(log.timestamp)}
                     </td>
                     <td className="py-2.5 px-3 font-mono font-medium text-[#2C2825]">
                       <span className="px-2 py-0.5 rounded-xs bg-[#E9E4D9] text-[#47423D] text-[10px]">

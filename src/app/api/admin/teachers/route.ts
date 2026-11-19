@@ -85,7 +85,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const tempPassword = password || generateTemporaryPassword();
+    const tempPassword = (password && password.trim().length > 0) ? password.trim() : generateTemporaryPassword();
     const passwordHash = await hashPassword(tempPassword);
 
     const teacher = await prisma.user.create({

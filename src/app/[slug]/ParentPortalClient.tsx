@@ -548,6 +548,7 @@ export default function ParentPortalClient({
             isOpen={showPreviewModal}
             onClose={() => setShowPreviewModal(false)}
             schoolName={schoolName}
+            schoolLogoUrl={schoolLogo || undefined}
             studentName={student?.full_name || ""}
             admissionNumber={student?.admission_number || ""}
             className={student?.class?.name || "Class"}

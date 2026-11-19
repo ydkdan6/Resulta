@@ -48,7 +48,7 @@ export async function POST(
       );
     }
 
-    const plainPassword = password || generateTemporaryPassword();
+    const plainPassword = (password && password.trim().length > 0) ? password.trim() : generateTemporaryPassword();
     const passwordHash = await hashPassword(plainPassword);
 
     const user = await prisma.user.create({

@@ -11,6 +11,7 @@ interface Props {
   classes: ClassItem[];
   schoolClassesWithSubjects?: AssignedClass[];
   schoolName: string;
+  schoolLogo?: string | null;
   overviewContent: React.ReactNode;
 }
 
@@ -18,6 +19,7 @@ export default function StaffPortalClient({
   classes,
   schoolClassesWithSubjects = [],
   schoolName,
+  schoolLogo,
   overviewContent,
 }: Props) {
   const [activeTab, setActiveTab] = useState<"overview" | "roster" | "scores" | "payments" | "audit" | "data-protection">("overview");
@@ -106,7 +108,7 @@ export default function StaffPortalClient({
         />
       )}
       {activeTab === "payments" && (
-        <PaymentsClient schoolName={schoolName} />
+        <PaymentsClient schoolName={schoolName} schoolLogo={schoolLogo} />
       )}
       {activeTab === "audit" && (
         <AuditLogViewer portalType="staff" />

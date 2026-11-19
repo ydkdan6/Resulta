@@ -47,7 +47,7 @@ export async function GET(request: NextRequest) {
       old_values: log.old_values,
       new_values: log.new_values,
       reason: log.reason,
-      timestamp: log.timestamp,
+      timestamp: log.timestamp instanceof Date ? log.timestamp.toISOString() : String(log.timestamp),
       user: log.user,
     }));
 

@@ -104,6 +104,7 @@ export default async function SchoolAdminPortalPage() {
       <main className="max-w-6xl mx-auto px-6 py-8 w-full flex-1">
         <StaffPortalClient
           schoolName={school.name}
+          schoolLogo={school.logo_url}
           classes={school.classes.map((c) => ({ id: c.id, name: c.name }))}
           schoolClassesWithSubjects={school.classes.map((c) => ({
             id: c.id,

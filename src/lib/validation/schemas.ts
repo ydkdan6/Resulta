@@ -184,7 +184,7 @@ export const AdminCreateAdminSchema = z.object({
   name: z.string().min(1, 'Name is required.').trim(),
   email: z.string().email('Invalid email address.').optional().nullable(),
   phone: z.string().optional().nullable(),
-  password: z.string().min(6, 'Password must be at least 6 characters.'),
+  password: z.union([z.string().min(6, 'Password must be at least 6 characters.'), z.literal('')]).optional().nullable(),
 });
 export type AdminCreateAdminInput = z.infer<typeof AdminCreateAdminSchema>;
 
@@ -192,7 +192,7 @@ export const AdminCreateTeacherSchema = z.object({
   name: z.string().min(1, 'Teacher name is required.').trim(),
   email: z.string().email('Invalid email address.').optional().nullable(),
   phone: z.string().optional().nullable(),
-  password: z.string().min(6, 'Password must be at least 6 characters.'),
+  password: z.union([z.string().min(6, 'Password must be at least 6 characters.'), z.literal('')]).optional().nullable(),
   school_id: z.string().min(1, 'school_id is required.'),
 });
 export type AdminCreateTeacherInput = z.infer<typeof AdminCreateTeacherSchema>;

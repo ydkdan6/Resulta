@@ -37,7 +37,16 @@ export async function GET(request: NextRequest) {
       },
     });
 
-    return NextResponse.json({ batches });
+    return NextResponse.json(
+      { batches },
+      {
+        headers: {
+          'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+          Pragma: 'no-cache',
+          Expires: '0',
+        },
+      }
+    );
   } catch (e: unknown) {
     if (e instanceof AuthError) {
       return NextResponse.json({ error: e.message }, { status: e.statusCode });

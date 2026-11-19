@@ -69,9 +69,10 @@ interface GeneratedPinItem {
 
 interface Props {
   schoolName: string;
+  schoolLogo?: string | null;
 }
 
-export default function PaymentsClient({ schoolName }: Props) {
+export default function PaymentsClient({ schoolName, schoolLogo }: Props) {
   const [terms, setTerms] = useState<TermOption[]>([]);
   const [selectedTermId, setSelectedTermId] = useState<string>("");
   const [loadingTerms, setLoadingTerms] = useState(true);
@@ -277,6 +278,7 @@ export default function PaymentsClient({ schoolName }: Props) {
       const currentTerm = terms.find((t) => t.id === selectedTermId);
       const cards = generatedPins.map((p) => ({
         schoolName,
+        logoUrl: schoolLogo || null,
         studentName: p.full_name,
         admissionNumber: p.admission_number,
         className: p.class_name || "General",

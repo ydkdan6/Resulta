@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { platformConfig } from "@/lib/config";
 import {
@@ -17,7 +17,8 @@ import {
   Scale,
   Trash2,
   X,
-  Users
+  Users,
+  RefreshCw
 } from "lucide-react";
 import RosterManager from "./RosterManager";
 import AuditLogViewer from "@/components/AuditLogViewer";
@@ -71,11 +72,26 @@ interface GradingSchemeData {
   created_at: string;
 }
 
+export interface AdminBatchData {
+  id: string;
+  school_id: string;
+  students_count: number;
+  amount_due: string | number;
+  amount_received: string | number;
+  status: "PENDING" | "CONFIRMED" | "REJECTED";
+  created_at: string;
+  confirmed_at: string | null;
+  school: { id: string; name: string; slug: string; platform_share: string | number };
+  term: { id: string; session: string; term_number: number };
+  confirmer: { name: string; email: string } | null;
+}
+
 interface Props {
   adminName: string;
   adminEmail: string;
   initialSchools: SchoolData[];
   initialTeachers: TeacherData[];
+  initialBatches?: AdminBatchData[];
 }
 
 export default function AdminDashboardClient({
@@ -83,41 +99,48 @@ export default function AdminDashboardClient({
   adminEmail,
   initialSchools,
   initialTeachers,
+  initialBatches = [],
 }: Props) {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<"schools" | "create-school" | "create-admin" | "create-teacher" | "assign-teacher" | "grading-schemes" | "student-roster" | "payment-batches" | "audit-logs">("schools");
 
   // Payment Batches states
-  const [adminBatches, setAdminBatches] = useState<{
-    id: string;
-    school_id: string;
-    students_count: number;
-    amount_due: string | number;
-    amount_received: string | number;
-    status: "PENDING" | "CONFIRMED" | "REJECTED";
-    created_at: string;
-    confirmed_at: string | null;
-    school: { id: string; name: string; slug: string; platform_share: string | number };
-    term: { id: string; session: string; term_number: number };
-    confirmer: { name: string; email: string } | null;
-  }[]>([]);
+  const [adminBatches, setAdminBatches] = useState<AdminBatchData[]>(initialBatches);
   const [loadingBatches, setLoadingBatches] = useState(false);
   const [confirmingBatchId, setConfirmingBatchId] = useState<string | null>(null);
+  const [lastBatchesUpdated, setLastBatchesUpdated] = useState<string | null>(null);
 
-  const loadAdminBatches = async () => {
+  const loadAdminBatches = useCallback(async () => {
     try {
       setLoadingBatches(true);
-      const res = await fetch("/api/admin/payment-batches");
+      const res = await fetch(`/api/admin/payment-batches?_t=${Date.now()}`, {
+        cache: "no-store",
+        headers: {
+          "Cache-Control": "no-cache",
+          Pragma: "no-cache",
+        },
+      });
       if (res.ok) {
         const data = await res.json();
         setAdminBatches(data.batches || []);
+        setLastBatchesUpdated(new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", second: "2-digit" }));
       }
     } catch (e) {
       console.error(e);
     } finally {
       setLoadingBatches(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === "payment-batches") {
+      loadAdminBatches();
+      const interval = setInterval(() => {
+        loadAdminBatches();
+      }, 15000);
+      return () => clearInterval(interval);
+    }
+  }, [activeTab, loadAdminBatches]);
 
   const handleConfirmBatch = async (batchId: string) => {
     try {
@@ -169,10 +192,12 @@ export default function AdminDashboardClient({
   const [adminSchoolId, setAdminSchoolId] = useState("");
   const [adminFullName, setAdminFullName] = useState("");
   const [adminEmailInput, setAdminEmailInput] = useState("");
+  const [adminPasswordInput, setAdminPasswordInput] = useState("");
 
   const [teacherSchoolId, setTeacherSchoolId] = useState("");
   const [teacherFullName, setTeacherFullName] = useState("");
   const [teacherEmailInput, setTeacherEmailInput] = useState("");
+  const [teacherPasswordInput, setTeacherPasswordInput] = useState("");
 
   const [assignSchoolId, setAssignSchoolId] = useState("");
   const [assignTeacherId, setAssignTeacherId] = useState("");
@@ -241,6 +266,7 @@ export default function AdminDashboardClient({
         body: JSON.stringify({
           name: adminFullName,
           email: adminEmailInput,
+          ...(adminPasswordInput.trim() ? { password: adminPasswordInput.trim() } : {}),
         }),
       });
 
@@ -255,6 +281,7 @@ export default function AdminDashboardClient({
       setMessage({ text: `School admin created for ${data.user.name}.`, type: "success" });
       setAdminFullName("");
       setAdminEmailInput("");
+      setAdminPasswordInput("");
       router.refresh();
     } catch (err: unknown) {
       setMessage({ text: err instanceof Error ? err.message : "Error", type: "error" });
@@ -278,6 +305,7 @@ export default function AdminDashboardClient({
           school_id: teacherSchoolId,
           name: teacherFullName,
           email: teacherEmailInput,
+          ...(teacherPasswordInput.trim() ? { password: teacherPasswordInput.trim() } : {}),
         }),
       });
 
@@ -295,6 +323,7 @@ export default function AdminDashboardClient({
       });
       setTeacherFullName("");
       setTeacherEmailInput("");
+      setTeacherPasswordInput("");
       router.refresh();
     } catch (err: unknown) {
       setMessage({ text: err instanceof Error ? err.message : "Error", type: "error" });
@@ -570,13 +599,18 @@ export default function AdminDashboardClient({
                 setMessage(null);
                 loadAdminBatches();
               }}
-              className={`px-4 py-2.5 text-xs font-mono font-medium transition-colors border-b-2 cursor-pointer ${
+              className={`px-4 py-2.5 text-xs font-mono font-medium transition-all active:scale-95 border-b-2 cursor-pointer flex items-center gap-1.5 ${
                 activeTab === "payment-batches"
                   ? "border-[#671B24] text-[#671B24]"
                   : "border-transparent text-[#6B645D] hover:text-[#2C2825]"
               }`}
             >
-              Payment Batches
+              <span>Payment Batches</span>
+              {adminBatches.filter((b) => b.status === "PENDING").length > 0 && (
+                <span className="px-1.5 py-0.2 bg-[#91660A] text-white text-[10px] font-bold rounded-full">
+                  {adminBatches.filter((b) => b.status === "PENDING").length}
+                </span>
+              )}
             </button>
             <button
               onClick={() => {
@@ -888,6 +922,20 @@ export default function AdminDashboardClient({
                 />
               </div>
 
+              <div>
+                <label className="block text-xs font-mono uppercase text-[#47423D] mb-1">
+                  Initial Password <span className="text-[#8C827A] normal-case">(Optional - leave blank to auto-generate)</span>
+                </label>
+                <input
+                  type="password"
+                  placeholder="Auto-generated temporary password if blank"
+                  value={adminPasswordInput}
+                  onChange={(e) => setAdminPasswordInput(e.target.value)}
+                  minLength={6}
+                  className="w-full px-3 py-2 text-sm bg-[#FAF8F3] border border-[#D9D3C7] rounded-sm text-[#2C2825]"
+                />
+              </div>
+
               <button
                 type="submit"
                 disabled={loading}
@@ -955,6 +1003,20 @@ export default function AdminDashboardClient({
                   placeholder="teacher@school.edu.ng"
                   value={teacherEmailInput}
                   onChange={(e) => setTeacherEmailInput(e.target.value)}
+                  className="w-full px-3 py-2 text-sm bg-[#FAF8F3] border border-[#D9D3C7] rounded-sm text-[#2C2825]"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-mono uppercase text-[#47423D] mb-1">
+                  Initial Password <span className="text-[#8C827A] normal-case">(Optional - leave blank to auto-generate)</span>
+                </label>
+                <input
+                  type="password"
+                  placeholder="Auto-generated temporary password if blank"
+                  value={teacherPasswordInput}
+                  onChange={(e) => setTeacherPasswordInput(e.target.value)}
+                  minLength={6}
                   className="w-full px-3 py-2 text-sm bg-[#FAF8F3] border border-[#D9D3C7] rounded-sm text-[#2C2825]"
                 />
               </div>
@@ -1440,14 +1502,22 @@ export default function AdminDashboardClient({
                   Record payments received from schools and confirm batches to approve PIN generation.
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={loadAdminBatches}
-                disabled={loadingBatches}
-                className="px-3 py-1.5 bg-[#FAF8F3] hover:bg-[#F0ECE1] border border-[#D1CCC2] text-xs font-mono text-[#2C2825] rounded-sm"
-              >
-                {loadingBatches ? "Refreshing..." : "Refresh Batches"}
-              </button>
+              <div className="flex items-center gap-3">
+                {lastBatchesUpdated && (
+                  <span className="text-[11px] font-mono text-[#6B645D]">
+                    Updated at {lastBatchesUpdated}
+                  </span>
+                )}
+                <button
+                  type="button"
+                  onClick={loadAdminBatches}
+                  disabled={loadingBatches}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#FAF8F3] hover:bg-[#F0ECE1] active:scale-95 active:bg-[#E5DFD0] border border-[#D1CCC2] text-xs font-mono text-[#2C2825] rounded-sm transition-all cursor-pointer shadow-xs disabled:opacity-50"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${loadingBatches ? "animate-spin text-[#671B24]" : ""}`} />
+                  {loadingBatches ? "Refreshing..." : "Refresh Batches"}
+                </button>
+              </div>
             </div>
 
             <div className="overflow-x-auto">
@@ -1474,7 +1544,14 @@ export default function AdminDashboardClient({
                     adminBatches.map((b) => (
                       <tr key={b.id} className="hover:bg-[#FAF8F3]">
                         <td className="py-2.5 px-3 text-[#6B645D]">
-                          {new Date(b.created_at).toLocaleDateString()}
+                          {(() => {
+                            try {
+                              const d = new Date(b.created_at);
+                              return isNaN(d.getTime()) ? "—" : d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+                            } catch {
+                              return "—";
+                            }
+                          })()}
                         </td>
                         <td className="py-2.5 px-3 font-semibold text-[#2C2825]">
                           {b.school.name}
@@ -1505,9 +1582,15 @@ export default function AdminDashboardClient({
                               type="button"
                               disabled={confirmingBatchId === b.id}
                               onClick={() => handleConfirmBatch(b.id)}
-                              className="px-3 py-1 bg-[#3F4E40] hover:bg-[#344035] text-white text-[11px] font-mono rounded-sm disabled:opacity-40"
+                              className="px-3.5 py-1.5 bg-[#3F4E40] hover:bg-[#2E3A2F] active:scale-95 active:bg-[#1E271F] text-white text-[11px] font-mono font-medium rounded-sm shadow-xs transition-all cursor-pointer disabled:opacity-40"
                             >
-                              {confirmingBatchId === b.id ? "Confirming..." : "Confirm Payment"}
+                              {confirmingBatchId === b.id ? (
+                                <span className="inline-flex items-center gap-1">
+                                  <RefreshCw className="w-3 h-3 animate-spin" /> Confirming...
+                                </span>
+                              ) : (
+                                "Confirm Payment"
+                              )}
                             </button>
                           ) : (
                             <span className="text-[11px] text-[#6B645D]">

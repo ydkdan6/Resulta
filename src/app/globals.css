@@ -41,3 +41,23 @@ body {
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
 }
+
+/* Tactile button feedback for noticeable user clicks */
+button, input[type="button"], input[type="submit"], input[type="reset"], [role="button"] {
+  transition: transform 0.08s ease-in-out, filter 0.08s ease-in-out, background-color 0.15s ease, box-shadow 0.1s ease;
+  user-select: none;
+}
+
+button:active:not(:disabled),
+input[type="button"]:active:not(:disabled),
+input[type="submit"]:active:not(:disabled),
+[role="button"]:active:not([aria-disabled="true"]) {
+  transform: scale(0.97) translateY(1px);
+  filter: brightness(0.92);
+}
+
+button:focus-visible,
+[role="button"]:focus-visible {
+  outline: 2px solid #671B24;
+  outline-offset: 2px;
+}

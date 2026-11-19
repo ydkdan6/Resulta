@@ -46,6 +46,10 @@ export function sanitizeData<T>(input: T): T {
     return input;
   }
 
+  if (input instanceof Date) {
+    return new Date(input.getTime()) as unknown as T;
+  }
+
   if (input instanceof Error) {
     const cleanError: Record<string, unknown> = {
       name: input.name,
