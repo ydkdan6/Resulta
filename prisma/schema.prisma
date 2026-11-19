@@ -53,6 +53,12 @@ enum ComplaintStatus {
   DISMISSED
 }
 
+enum ShareLedgerEntryType {
+  SHARE_DUE
+  REVERSAL
+  SETTLEMENT
+}
+
 model School {
   id             String   @id @default(uuid())
   name           String
@@ -79,6 +85,7 @@ model School {
   gradingSchemes      GradingScheme[]
   auditLogs           AuditLog[]
   complaints          Complaint[]
+  shareLedgerEntries  ShareLedgerEntry[]
 
   @@index([slug])
 }
@@ -100,6 +107,7 @@ model User {
   confirmedBatches   PaymentBatch[]      @relation("BatchConfirmer")
   studentImports     StudentImport[]
   auditLogs          AuditLog[]
+  markedLedgerEntries ShareLedgerEntry[] @relation("LedgerMarker")
 
   @@index([school_id])
   @@index([email])
@@ -175,6 +183,7 @@ model Student {
   termStatuses StudentTermStatus[]
   pins         Pin[]
   complaints   Complaint[]
+  shareLedgerEntries ShareLedgerEntry[]
 
   @@unique([school_id, admission_number])
   @@index([school_id])
@@ -185,16 +194,19 @@ model Student {
 }
 
 model StudentImport {
-  id              String   @id @default(uuid())
-  school_id       String
-  user_id         String?
-  file_name       String
-  new_count       Int
-  updated_count   Int
-  unchanged_count Int
-  error_count     Int
-  total_count     Int
-  created_at      DateTime @default(now())
+  id                   String   @id @default(uuid())
+  school_id            String
+  user_id              String?
+  file_name            String
+  new_count            Int
+  updated_count        Int
+  unchanged_count      Int
+  error_count          Int
+  total_count          Int
+  active_student_count Int?
+  expected_total       Decimal? @db.Decimal(12, 2)
+  expected_share       Decimal? @db.Decimal(12, 2)
+  created_at           DateTime @default(now())
 
   school School @relation(fields: [school_id], references: [id], onDelete: Cascade)
   user   User?  @relation(fields: [user_id], references: [id], onDelete: SetNull)
@@ -219,6 +231,7 @@ model Term {
   paymentBatches PaymentBatch[]
   pins           Pin[]
   complaints     Complaint[]
+  shareLedgerEntries ShareLedgerEntry[]
 
   @@unique([school_id, session, term_number])
   @@index([school_id])
@@ -386,4 +399,29 @@ model GradingScheme {
 
   @@index([school_id])
   @@index([school_id, class_level])
+}
+
+// Append-only ledger for platform share tracking.
+// Never edited or deleted after creation.
+model ShareLedgerEntry {
+  id                String               @id @default(uuid())
+  school_id         String
+  student_id        String?              // null for SETTLEMENT entries
+  term_id           String?              // optional; null allowed for school-level settlements
+  type              ShareLedgerEntryType
+  amount            Decimal              @db.Decimal(12, 2)
+  marked_by_user_id String?
+  reference         String?
+  note              String?              @db.Text
+  created_at        DateTime             @default(now())
+
+  school      School   @relation(fields: [school_id], references: [id], onDelete: Restrict)
+  student     Student? @relation(fields: [student_id], references: [id], onDelete: Restrict)
+  term        Term?    @relation(fields: [term_id], references: [id], onDelete: Restrict)
+  marked_by   User?    @relation("LedgerMarker", fields: [marked_by_user_id], references: [id], onDelete: SetNull)
+
+  @@index([school_id, created_at])
+  @@index([term_id])
+  @@index([school_id, type])
+  @@index([student_id, term_id])
 }
