@@ -52,7 +52,21 @@ function applySecurityHeaders(res: NextResponse): NextResponse {
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const host = request.headers.get("host") || request.nextUrl.host || "";
-  const { slug: schoolSlug, portal } = parseHost(host);
+  let { slug: schoolSlug, portal } = parseHost(host);
+
+  // Path-based fallback for Vercel.app environments (e.g. /s/:slug or /s/:slug/staff)
+  if (!portal && pathname.startsWith("/s/")) {
+    const parts = pathname.slice(3).split("/").filter(Boolean);
+    const pathSlug = parts[0];
+    if (pathSlug && /^[a-z0-9-]+$/.test(pathSlug)) {
+      schoolSlug = pathSlug;
+      if (parts[1] === "staff") {
+        portal = "staff";
+      } else {
+        portal = "results";
+      }
+    }
+  }
 
   // Remove anything the client may have forged, then set our own values.
   const requestHeaders = new Headers(request.headers);
@@ -64,6 +78,42 @@ export async function middleware(request: NextRequest) {
     applySecurityHeaders(NextResponse.next({ request: { headers: requestHeaders } }));
   const json = (body: object, status: number) =>
     applySecurityHeaders(NextResponse.json(body, { status }));
+
+  // Handle path-based /s/:slug rewrite directly to /[slug]
+  if (pathname.startsWith("/s/")) {
+    const parts = pathname.slice(3).split("/").filter(Boolean);
+    if (parts.length === 1) {
+      // /s/:slug -> results portal
+      const url = request.nextUrl.clone();
+      url.pathname = `/${parts[0]}`;
+      return applySecurityHeaders(
+        NextResponse.rewrite(url, {
+          request: { headers: requestHeaders },
+        })
+      );
+    }
+    if (parts[1] === "staff") {
+      // /s/:slug/staff/login or /s/:slug/staff
+      const token = request.cookies.get(SESSION_COOKIE_NAME)?.value;
+      const session = token ? await verifySessionToken(token) : null;
+      if (parts[2] === "login" || !session) {
+        const url = request.nextUrl.clone();
+        url.pathname = "/staff/login";
+        return applySecurityHeaders(
+          NextResponse.rewrite(url, {
+            request: { headers: requestHeaders },
+          })
+        );
+      }
+      const url = request.nextUrl.clone();
+      url.pathname = parts.length > 2 ? `/${parts.slice(1).join("/")}` : "/staff";
+      return applySecurityHeaders(
+        NextResponse.rewrite(url, {
+          request: { headers: requestHeaders },
+        })
+      );
+    }
+  }
 
   // 1. Results address: decided first, before any login check.
   if (portal === "results") {

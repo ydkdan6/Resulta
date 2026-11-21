@@ -57,11 +57,18 @@ export const platformConfig: PlatformConfig = {
   getSchoolResultsUrl: (schoolSlug: string) => {
     const protocol = isLocal ? 'http' : 'https';
     const portSuffix = isLocal && rawPort !== 80 && rawPort !== 443 ? `:${rawPort}` : '';
+    // On vercel.app domains where wildcard subdomains aren't resolved by Vercel DNS:
+    if (rawDomain.endsWith('.vercel.app')) {
+      return `${protocol}://${rawDomain}${portSuffix}/s/${schoolSlug}`;
+    }
     return `${protocol}://${schoolSlug}.${rawDomain}${portSuffix}`;
   },
   getSchoolStaffUrl: (schoolSlug: string) => {
     const protocol = isLocal ? 'http' : 'https';
     const portSuffix = isLocal && rawPort !== 80 && rawPort !== 443 ? `:${rawPort}` : '';
+    if (rawDomain.endsWith('.vercel.app')) {
+      return `${protocol}://${rawDomain}${portSuffix}/s/${schoolSlug}/staff`;
+    }
     return `${protocol}://${schoolSlug}-staff.${rawDomain}${portSuffix}`;
   },
 };

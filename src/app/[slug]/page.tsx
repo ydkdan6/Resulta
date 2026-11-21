@@ -5,7 +5,11 @@ import { prisma } from '@/lib/prisma';
 import React, { Suspense } from 'react';
 import ParentPortalClient from './ParentPortalClient';
 
-export default function ResultsPortalPage() {
+interface PageProps {
+  params: Promise<{ slug: string }>;
+}
+
+export default function ResultsPortalPage({ params }: PageProps) {
   return (
     <Suspense
       fallback={
@@ -14,20 +18,23 @@ export default function ResultsPortalPage() {
         </div>
       }
     >
-      <ResultsContent />
+      <ResultsContent params={params} />
     </Suspense>
   );
 }
 
-async function ResultsContent() {
+async function ResultsContent({ params }: PageProps) {
+  const resolvedParams = await params;
   const slugHeader = (await headers()).get('x-school-slug');
-  if (!slugHeader) {
+  const targetSlug = slugHeader || resolvedParams?.slug;
+
+  if (!targetSlug) {
     notFound();
     return null;
   }
 
   const school = await prisma.school.findUnique({
-    where: { slug: slugHeader },
+    where: { slug: targetSlug },
     select: { name: true, logo_url: true, slug: true },
   });
 
