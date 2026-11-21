@@ -23,6 +23,7 @@ import {
 import RosterManager from "./RosterManager";
 import SharesTabClient from "./SharesTabClient";
 import AuditLogViewer from "@/components/AuditLogViewer";
+import WaitlistAdminTab from "./WaitlistAdminTab";
 
 interface SchoolData {
   id: string;
@@ -103,7 +104,7 @@ export default function AdminDashboardClient({
   initialBatches = [],
 }: Props) {
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<"schools" | "create-school" | "create-admin" | "create-teacher" | "assign-teacher" | "grading-schemes" | "student-roster" | "payments-and-shares" | "audit-logs">("schools");
+  const [activeTab, setActiveTab] = useState<"schools" | "create-school" | "create-admin" | "create-teacher" | "assign-teacher" | "grading-schemes" | "student-roster" | "payments-and-shares" | "waitlist" | "audit-logs">("schools");
 
 
 
@@ -549,6 +550,19 @@ export default function AdminDashboardClient({
               }`}
             >
               <span>Payments & Shares</span>
+            </button>
+            <button
+              onClick={() => {
+                setActiveTab("waitlist");
+                setMessage(null);
+              }}
+              className={`px-4 py-2.5 text-xs font-mono font-medium transition-colors border-b-2 cursor-pointer flex items-center gap-1.5 ${
+                activeTab === "waitlist"
+                  ? "border-[#671B24] text-[#671B24]"
+                  : "border-transparent text-[#6B645D] hover:text-[#2C2825]"
+              }`}
+            >
+              <span>Waitlist</span>
             </button>
             <button
               onClick={() => {
@@ -1433,6 +1447,11 @@ export default function AdminDashboardClient({
         {/* TAB 8: Payments & Shares */}
         {activeTab === "payments-and-shares" && (
           <SharesTabClient schools={initialSchools} />
+        )}
+
+        {/* TAB 9: Waitlist */}
+        {activeTab === "waitlist" && (
+          <WaitlistAdminTab />
         )}
 
         {activeTab === "audit-logs" && (

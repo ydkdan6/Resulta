@@ -425,3 +425,15 @@ model ShareLedgerEntry {
   @@index([school_id, type])
   @@index([student_id, term_id])
 }
+
+model WaitlistEntry {
+  id               String   @id @default(uuid())
+  school_email     String
+  whatsapp_number1 String
+  whatsapp_number2 String?
+  created_at       DateTime @default(now())
+
+  @@index([school_email])
+  @@index([created_at])
+}
+

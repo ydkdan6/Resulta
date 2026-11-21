@@ -44,7 +44,7 @@ function applySecurityHeaders(res: NextResponse): NextResponse {
   res.headers.set("Permissions-Policy", "camera=(), microphone=(), geolocation=(), browsing-topics=()");
   res.headers.set(
     "Content-Security-Policy",
-    "default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: blob:; font-src 'self' data:; connect-src 'self' https:; frame-ancestors 'none';"
+    "default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: blob:; media-src 'self' https: data: blob:; font-src 'self' data:; connect-src 'self' https:; frame-ancestors 'none';"
   );
   return res;
 }
@@ -98,6 +98,7 @@ export async function middleware(request: NextRequest) {
   // 2. Unauthenticated API calls should immediately return 401 (except auth and public monitoring routes).
   const isPublicApiRoute =
     pathname.startsWith("/api/auth/") ||
+    pathname === "/api/waitlist" ||
     pathname === "/api/health" ||
     pathname.startsWith("/api/health/");
 
