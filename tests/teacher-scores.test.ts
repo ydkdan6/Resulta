@@ -343,6 +343,9 @@ describe("Score Entry Endpoints & Permissions (Isolated / Mocked DB)", () => {
     const origSubjFind = prisma.subject.findUnique;
     const origTermFind = prisma.term.findUnique;
     const origAssignFind = prisma.teacherAssignment.findFirst;
+    const origAssignMany = prisma.teacherAssignment.findMany;
+    const origStudentFind = prisma.student.findUnique;
+    const origDeptSubjMany = (prisma as any).departmentSubject?.findMany;
     const origResultFind = prisma.result.findFirst;
     const origSchemesFind = (prisma.gradingScheme as any).findMany;
     const origTx = prisma.$transaction;
@@ -363,6 +366,13 @@ describe("Score Entry Endpoints & Permissions (Isolated / Mocked DB)", () => {
       status: "DRAFT",
     });
     (prisma.teacherAssignment as any).findFirst = async () => ({ id: "assign-1" });
+    (prisma.teacherAssignment as any).findMany = async () => [{ id: "assign-1", department_id: null }];
+    if (!(prisma as any).departmentSubject) (prisma as any).departmentSubject = {};
+    (prisma as any).departmentSubject.findMany = async () => [];
+    (prisma.student as any).findUnique = async ({ where }: any) => {
+      const found = mockStudents.find((s) => s.id === where.id);
+      return found ? { ...found, school_id: "school-1", class_id: "class-1", department_id: null } : null;
+    };
     (prisma.result as any).findFirst = async () => null; // not locked yet
     (prisma.gradingScheme as any).findMany = async () => [
       { id: "g1", school_id: "school-1", parts: DEFAULT_FALLBACK_SCHEME.parts, boundaries: DEFAULT_FALLBACK_SCHEME.boundaries },
@@ -401,6 +411,9 @@ describe("Score Entry Endpoints & Permissions (Isolated / Mocked DB)", () => {
       (prisma.subject as any).findUnique = origSubjFind;
       (prisma.term as any).findUnique = origTermFind;
       (prisma.teacherAssignment as any).findFirst = origAssignFind;
+      (prisma.teacherAssignment as any).findMany = origAssignMany;
+      if (origDeptSubjMany) (prisma as any).departmentSubject.findMany = origDeptSubjMany;
+      (prisma.student as any).findUnique = origStudentFind;
       (prisma.result as any).findFirst = origResultFind;
       (prisma.gradingScheme as any).findMany = origSchemesFind;
       (prisma as any).$transaction = origTx;

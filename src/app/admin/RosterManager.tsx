@@ -35,6 +35,8 @@ interface RawRosterRow {
   admission_number: string;
   full_name: string;
   class_name: string;
+  department_name?: string | null;
+  department_source?: "column" | "class_split" | "none";
 }
 
 interface ValidatedRosterRow {
@@ -42,8 +44,18 @@ interface ValidatedRosterRow {
   admission_number: string;
   full_name: string;
   class_name: string;
+  department_name?: string | null;
+  department_source?: "column" | "class_split" | "none";
   action: "NEW" | "UPDATE" | "UNCHANGED" | "ERROR";
   errors: string[];
+}
+
+interface DepartmentChangeItem {
+  admission_number: string;
+  full_name: string;
+  old_department: string | null;
+  new_department: string;
+  affected_subjects: string[];
 }
 
 interface PreviewResponse {
@@ -55,6 +67,9 @@ interface PreviewResponse {
   rows: ValidatedRosterRow[];
   rawRows: RawRosterRow[];
   unknownClasses: string[];
+  unknownDepartments?: string[];
+  departmentChanges?: DepartmentChangeItem[];
+  requiresDepartmentConfirmation?: boolean;
   warnings: string[];
   hasMixedAdmissionLengths: boolean;
 }
@@ -98,6 +113,8 @@ export default function RosterManager({ schools }: Props) {
   // Import options
   const [skipBadRows, setSkipBadRows] = useState<boolean>(false);
   const [createMissingClasses, setCreateMissingClasses] = useState<boolean>(false);
+  const [createMissingDepartments, setCreateMissingDepartments] = useState<boolean>(false);
+  const [confirmDepartmentChanges, setConfirmDepartmentChanges] = useState<boolean>(false);
   const [isCompleteList, setIsCompleteList] = useState<boolean>(false);
 
   // Import execution states
@@ -274,6 +291,8 @@ export default function RosterManager({ schools }: Props) {
           rows: previewData.rawRows,
           skipBadRows,
           createMissingClasses,
+          createMissingDepartments,
+          confirmDepartmentChanges,
           isCompleteList,
         }),
       });
@@ -576,6 +595,53 @@ export default function RosterManager({ schools }: Props) {
               </div>
             )}
 
+            {/* Requirement 4 & 5: Department Changes Detected Warning Callout */}
+            {previewData.departmentChanges && previewData.departmentChanges.length > 0 && (
+              <div className="p-3 bg-[#FFFBF0] border border-[#F0E6C8] text-[#8C6D1F] text-xs space-y-2 rounded-sm">
+                <div className="flex items-start gap-2.5">
+                  <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-[#8C6D1F]" />
+                  <div>
+                    <span className="font-semibold block font-mono">Department Changes Detected ({previewData.departmentChanges.length} students)</span>
+                    <span className="text-[11px]">
+                      The following students have their department changed from their currently registered department. Existing results remain untouched, but results for subjects not offered by the new department will be hidden from reports and averages.
+                    </span>
+                  </div>
+                </div>
+                <div className="pl-6 space-y-1">
+                  {previewData.departmentChanges.slice(0, 5).map((dc, idx) => (
+                    <div key={idx} className="font-mono text-[11px] bg-[#FFF8E6] p-1.5 rounded border border-[#EBDCB7]">
+                      <strong>{dc.full_name} ({dc.admission_number})</strong>:{" "}
+                      <span className="text-[#6B645D]">{dc.old_department || "No department"}</span> → <span className="text-[#7A5B15] font-semibold">{dc.new_department}</span>
+                      {dc.affected_subjects && dc.affected_subjects.length > 0 && (
+                        <span className="block text-[10px] text-[#A33D29] mt-0.5">
+                          Affected subjects (hidden from reports): {dc.affected_subjects.join(", ")}
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                  {previewData.departmentChanges.length > 5 && (
+                    <span className="text-[10px] text-[#6B645D] italic">
+                      + {previewData.departmentChanges.length - 5} more student department change(s)
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Unknown Departments Warning */}
+            {previewData.unknownDepartments && previewData.unknownDepartments.length > 0 && (
+              <div className="p-3 bg-[#FFFBF0] border border-[#F0E6C8] text-[#8C6D1F] text-xs flex items-start gap-2.5 rounded-sm">
+                <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-[#8C6D1F]" />
+                <div>
+                  <span className="font-semibold block font-mono">Unknown Departments Detected</span>
+                  <span className="text-[11px]">
+                    The following departments are not yet registered in {selectedSchool?.name}:{" "}
+                    <strong>{previewData.unknownDepartments.join(", ")}</strong>. Check &quot;Create missing departments&quot; below to auto-create them.
+                  </span>
+                </div>
+              </div>
+            )}
+
             {previewData.unknownClasses.length > 0 && (
               <div className="p-3 bg-[#FFFBF0] border border-[#F0E6C8] text-[#8C6D1F] text-xs flex items-start gap-2.5 rounded-sm">
                 <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-[#8C6D1F]" />
@@ -616,6 +682,7 @@ export default function RosterManager({ schools }: Props) {
                     <th className="py-2.5 px-4 font-medium">Admission No.</th>
                     <th className="py-2.5 px-4 font-medium">Full Name</th>
                     <th className="py-2.5 px-4 font-medium">Class</th>
+                    <th className="py-2.5 px-4 font-medium">Department</th>
                     <th className="py-2.5 px-4 font-medium w-24">Status</th>
                     <th className="py-2.5 px-4 font-medium">Notes / Errors</th>
                   </tr>
@@ -634,6 +701,22 @@ export default function RosterManager({ schools }: Props) {
                         </td>
                         <td className="py-2 px-4 text-[#2C2825]">{r.full_name || "—"}</td>
                         <td className="py-2 px-4 font-mono text-[#2C2825]">{r.class_name || "—"}</td>
+                        <td className="py-2 px-4 font-mono text-xs">
+                          {r.department_name ? (
+                            <span className="inline-flex items-center gap-1">
+                              <span className="px-1.5 py-0.5 rounded text-[10px] bg-[#FAF3E0] text-[#7A5B15] border border-[#ECD9B0]">
+                                {r.department_name}
+                              </span>
+                              {r.department_source && (
+                                <span className="text-[9px] text-[#8C827A]" title={`Source: ${r.department_source}`}>
+                                  ({r.department_source === "class_split" ? "from class" : r.department_source})
+                                </span>
+                              )}
+                            </span>
+                          ) : (
+                            <span className="text-[#8C827A] text-[11px]">—</span>
+                          )}
+                        </td>
                         <td className="py-2 px-4">
                           <span
                             className={`inline-block px-2 py-0.5 rounded text-[10px] font-mono font-semibold uppercase ${
@@ -735,6 +818,38 @@ export default function RosterManager({ schools }: Props) {
               <label className="flex items-start gap-2.5 cursor-pointer text-xs text-[#2C2825]">
                 <input
                   type="checkbox"
+                  checked={createMissingDepartments}
+                  onChange={(e) => setCreateMissingDepartments(e.target.checked)}
+                  className="mt-0.5 rounded border-[#D5CFC4] text-[#3F4E40] focus:ring-[#3F4E40]"
+                />
+                <div>
+                  <span className="font-medium block">Create missing departments</span>
+                  <span className="text-[11px] text-[#6B645D]">
+                    Automatically register any unknown department names present in this file for this school.
+                  </span>
+                </div>
+              </label>
+
+              {previewData.requiresDepartmentConfirmation && (
+                <label className="flex items-start gap-2.5 cursor-pointer text-xs text-[#2C2825] p-2.5 bg-[#FFF9E6] border border-[#F0DC9E] rounded-sm">
+                  <input
+                    type="checkbox"
+                    checked={confirmDepartmentChanges}
+                    onChange={(e) => setConfirmDepartmentChanges(e.target.checked)}
+                    className="mt-0.5 rounded border-[#D5CFC4] text-[#7A5B15] focus:ring-[#7A5B15]"
+                  />
+                  <div>
+                    <span className="font-semibold block text-[#7A5B15]">Confirm Student Department Changes</span>
+                    <span className="text-[11px] text-[#6B645D]">
+                      I confirm the {previewData.departmentChanges?.length || 0} student department change(s). Results for unoffered subjects will be hidden from reports.
+                    </span>
+                  </div>
+                </label>
+              )}
+
+              <label className="flex items-start gap-2.5 cursor-pointer text-xs text-[#2C2825]">
+                <input
+                  type="checkbox"
                   checked={isCompleteList}
                   onChange={(e) => setIsCompleteList(e.target.checked)}
                   className="mt-0.5 rounded border-[#D5CFC4] text-[#3F4E40] focus:ring-[#3F4E40]"
@@ -773,7 +888,9 @@ export default function RosterManager({ schools }: Props) {
                 isImporting ||
                 isPreviewing ||
                 (!skipBadRows && previewData.errorCount > 0) ||
-                (!createMissingClasses && previewData.unknownClasses.length > 0)
+                (!createMissingClasses && previewData.unknownClasses.length > 0) ||
+                (!createMissingDepartments && (previewData.unknownDepartments?.length || 0) > 0) ||
+                (previewData.requiresDepartmentConfirmation && !confirmDepartmentChanges)
               }
               className="inline-flex items-center gap-2 px-5 py-2.5 bg-[#3F4E40] text-white hover:bg-[#2C382D] text-xs font-mono transition-colors rounded-sm cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
             >

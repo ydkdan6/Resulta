@@ -18,8 +18,8 @@ import {
  * - Current term first, then earlier published terms up to the PIN's term.
  * - Terms that are locked or unpublished do not appear.
  * - Later terms are never shown.
- * - Leverages high-performance cache for instant loads on mobile connections during result release week.
- * - Never caches PINs or private credentials.
+ * - If student has a department, only subjects offered by that department are shown.
+ * - If student has no department, all subjects appear.
  */
 export async function GET(request: NextRequest) {
   try {
@@ -39,14 +39,24 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // Student info
+    // Student info including department & offered subjects
     const student = await prisma.student.findUnique({
       where: { id: student_id },
       select: {
         id: true,
         admission_number: true,
         full_name: true,
+        department_id: true,
         class: { select: { id: true, name: true } },
+        department: {
+          select: {
+            id: true,
+            name: true,
+            departmentSubjects: {
+              select: { subject_id: true },
+            },
+          },
+        },
       },
     });
 
@@ -55,9 +65,6 @@ export async function GET(request: NextRequest) {
     }
 
     // Terms accessible:
-    // Published terms belonging to this school, up to the PIN's term:
-    // (session < pin_session) OR (session == pin_session AND term_number <= pin_term_number)
-    // Later terms are NEVER shown.
     const allPublishedTerms = await prisma.term.findMany({
       where: {
         school_id,
@@ -72,7 +79,7 @@ export async function GET(request: NextRequest) {
       return false; // Later terms are never shown!
     });
 
-    // Check withhold / locks per student for these terms (must always be verified live)
+    // Check withhold / locks per student for these terms
     const studentStatuses = await prisma.studentTermStatus.findMany({
       where: {
         student_id,
@@ -85,13 +92,20 @@ export async function GET(request: NextRequest) {
       studentStatuses.filter((s) => s.result_locked).map((s) => s.term_id)
     );
 
-    // Filter out locked terms: "Terms that are locked or unpublished do not appear"
+    // Filter out locked terms
     const visibleTerms = accessibleTerms.filter((t) => !lockedTermIds.has(t.id));
+
+    // Department offered subject IDs
+    const offeredSubjectIds =
+      student.department_id && student.department
+        ? new Set(student.department.departmentSubjects.map((ds) => ds.subject_id))
+        : null;
 
     // For visible terms, retrieve from cache or query DB
     const termsWithResults = await Promise.all(
       visibleTerms.map(async (t) => {
-        const cachedResults = getCachedReportCard(school_id, student_id, t.id);
+        const cacheKey = `${t.id}:${student.department_id || 'nodept'}`;
+        const cachedResults = getCachedReportCard(school_id, student_id, cacheKey);
         if (cachedResults) {
           return {
             id: t.id,
@@ -117,7 +131,12 @@ export async function GET(request: NextRequest) {
           orderBy: { subject: { name: 'asc' } },
         });
 
-        const termResults = results.map((r) => ({
+        // Filter by student's department if present
+        const filteredResults = offeredSubjectIds
+          ? results.filter((r) => offeredSubjectIds.has(r.subject.id))
+          : results;
+
+        const termResults = filteredResults.map((r) => ({
           subject: r.subject.name,
           ca_score: r.ca_score ? Number(r.ca_score) : null,
           exam_score: r.exam_score ? Number(r.exam_score) : null,
@@ -127,7 +146,7 @@ export async function GET(request: NextRequest) {
         }));
 
         // Cache the published report card
-        setCachedReportCard(school_id, student_id, t.id, termResults);
+        setCachedReportCard(school_id, student_id, cacheKey, termResults);
 
         return {
           id: t.id,
@@ -143,7 +162,13 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(
       {
         school,
-        student,
+        student: {
+          id: student.id,
+          admission_number: student.admission_number,
+          full_name: student.full_name,
+          class: student.class,
+          department: student.department ? { id: student.department.id, name: student.department.name } : null,
+        },
         terms: termsWithResults,
       },
       {

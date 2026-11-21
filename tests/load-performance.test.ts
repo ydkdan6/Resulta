@@ -160,30 +160,59 @@ describe('Result-Release Week: Performance & High-Load Concurrency Tests', () =>
     const origSubject = prisma.subject.findUnique;
     const origTerm = prisma.term.findUnique;
     const origTeacherAssignment = prisma.teacherAssignment.findFirst;
+    const origTeacherAssignmentMany = (prisma.teacherAssignment as any).findMany;
     const origResultFindFirst = prisma.result.findFirst;
     const origResultUpsert = (prisma.result as any).upsert;
     const origTransaction = prisma.$transaction;
     const origScheme = (prisma.gradingScheme as any).findMany;
+    const origStudentFindUnique = prisma.student.findUnique;
+    const origDeptSubjFindMany = (prisma as any).departmentSubject?.findMany;
+    const origDeptSubjFindUnique = (prisma as any).departmentSubject?.findUnique;
 
     (prisma.class as any).findUnique = async ({ where }: any) => ({
       id: where.id,
       school_id: schoolId,
       name: `Class ${where.id}`,
       students: [
-        { id: `stud-1`, admission_number: 'ADM001', full_name: 'Alice', status: 'ACTIVE' },
-        { id: `stud-2`, admission_number: 'ADM002', full_name: 'Bob', status: 'ACTIVE' },
+        { id: `stud-1`, admission_number: 'ADM001', full_name: 'Alice', status: 'ACTIVE', department_id: null },
+        { id: `stud-2`, admission_number: 'ADM002', full_name: 'Bob', status: 'ACTIVE', department_id: null },
       ],
     });
 
     (prisma.subject as any).findUnique = async () => ({ id: 'subj-1', school_id: schoolId });
     (prisma.term as any).findUnique = async () => ({ id: termId, school_id: schoolId, status: 'PUBLISHED' });
-    (prisma.teacherAssignment as any).findFirst = async () => ({ id: 'assignment-1' });
+    (prisma.teacherAssignment as any).findFirst = async () => ({ id: 'assignment-1', department_id: null });
+    (prisma.teacherAssignment as any).findMany = async () => [{ id: 'assignment-1', department_id: null }];
     (prisma.result as any).findFirst = async () => null;
     (prisma.result as any).upsert = (args: any) => Promise.resolve({ id: 'res-id', ...args });
     (prisma.gradingScheme as any).findMany = async () => [
       { id: "g1", school_id: schoolId, parts: DEFAULT_FALLBACK_SCHEME.parts, boundaries: DEFAULT_FALLBACK_SCHEME.boundaries },
     ];
     (prisma as any).$transaction = async (ops: any[]) => ops;
+
+    // Department-aware mocks: students have no department, so no dept checks are needed
+    if (!(prisma as any).departmentSubject) (prisma as any).departmentSubject = {};
+    (prisma as any).departmentSubject.findMany = async () => [];
+    (prisma as any).departmentSubject.findUnique = async () => null;
+
+    // verifyTeacherStudentScoreAccess calls student.findUnique per row.
+    // The class mock (above) already returns students; we need student.findUnique to return
+    // the correct class_id. We capture classId → studentId mapping from class.findUnique calls.
+    const studentClassMap = new Map<string, string>();
+    const baseFindUniqueClass = (prisma.class as any).findUnique;
+    (prisma.class as any).findUnique = async ({ where }: any) => {
+      const cls = await baseFindUniqueClass({ where });
+      if (cls?.students) {
+        for (const s of cls.students) studentClassMap.set(s.id, cls.id);
+      }
+      return cls;
+    };
+    (prisma.student as any).findUnique = async ({ where }: any) => ({
+      id: where.id,
+      school_id: schoolId,
+      class_id: studentClassMap.get(where.id) ?? where.id,
+      department_id: null,
+    });
 
     try {
       const startTime = performance.now();
@@ -241,10 +270,14 @@ describe('Result-Release Week: Performance & High-Load Concurrency Tests', () =>
       prisma.subject.findUnique = origSubject;
       prisma.term.findUnique = origTerm;
       prisma.teacherAssignment.findFirst = origTeacherAssignment;
+      (prisma.teacherAssignment as any).findMany = origTeacherAssignmentMany;
       prisma.result.findFirst = origResultFindFirst;
       (prisma.result as any).upsert = origResultUpsert;
       prisma.$transaction = origTransaction;
       (prisma.gradingScheme as any).findMany = origScheme;
+      prisma.student.findUnique = origStudentFindUnique;
+      if (origDeptSubjFindMany !== undefined) (prisma as any).departmentSubject.findMany = origDeptSubjFindMany;
+      if (origDeptSubjFindUnique !== undefined) (prisma as any).departmentSubject.findUnique = origDeptSubjFindUnique;
     }
   });
 

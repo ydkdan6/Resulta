@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireAuth, verifyTeacherAssignment, AuthError } from "@/lib/auth/scope";
+import { requireAuth, verifyTeacherAssignment, verifyTeacherStudentScoreAccess, AuthError } from "@/lib/auth/scope";
 import { validateScores, DEFAULT_FALLBACK_SCHEME } from "@/lib/scores/validateScores";
 import { SubmitScoresSchema } from "@/lib/validation/schemas";
 import { validateInput } from "@/lib/validation/validate";
@@ -36,6 +36,7 @@ export async function POST(request: NextRequest) {
             id: true,
             admission_number: true,
             full_name: true,
+            department_id: true,
             status: true,
           },
         },
@@ -67,13 +68,23 @@ export async function POST(request: NextRequest) {
     }
 
     // 4. Role Authorization: Teacher assignment check
+    let teacherAssignments: { id: string; department_id: string | null }[] = [];
     if (session.role === "teacher") {
       await verifyTeacherAssignment(session.id, session.school_id, classId, subjectId);
+      teacherAssignments = await prisma.teacherAssignment.findMany({
+        where: {
+          school_id: session.school_id,
+          teacher_id: session.id,
+          class_id: classId,
+          subject_id: subjectId,
+        },
+        select: { id: true, department_id: true },
+      });
     } else if (session.role !== "school_admin" && session.role !== "platform_admin") {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    // 5. Lock Check: A submitted score cannot be edited by the teacher
+    // 5. Lock Check: A submitted score cannot be re-submitted without unlock
     const studentIds = classObj.students.map((s) => s.id);
     const existingSubmitted = await prisma.result.findFirst({
       where: {
@@ -114,11 +125,36 @@ export async function POST(request: NextRequest) {
         }
       : DEFAULT_FALLBACK_SCHEME;
 
-    // 7. Strict Submission Validation: missing scores, over-max, duplicates, unknown students
+    // Filter students eligible for this submission (according to departments & assignments)
+    const deptSubjects = await prisma.departmentSubject.findMany({
+      where: {
+        school_id: session.school_id,
+        subject_id: subjectId,
+      },
+      select: { department_id: true },
+    });
+    const offeringDeptIds = new Set(deptSubjects.map((ds) => ds.department_id));
+
+    const isTeacher = session.role === "teacher";
+    const hasAllDepts = !isTeacher || teacherAssignments.some((a) => a.department_id === null);
+    const assignedDeptIds = new Set(teacherAssignments.map((a) => a.department_id).filter(Boolean) as string[]);
+
+    const eligibleStudents = classObj.students.filter((student) => {
+      if (!student.department_id) return true;
+      if (!offeringDeptIds.has(student.department_id)) return false;
+      if (isTeacher) {
+        if (!hasAllDepts && !assignedDeptIds.has(student.department_id)) {
+          return false;
+        }
+      }
+      return true;
+    });
+
+    // 7. Strict Submission Validation for eligible students
     const scoreValidation = validateScores({
       rows,
       scheme: gradingScheme,
-      students: classObj.students,
+      students: eligibleStudents,
       isSubmission: true,
     });
 
@@ -127,6 +163,19 @@ export async function POST(request: NextRequest) {
         { error: "Submission rejected due to validation errors.", details: scoreValidation.errors },
         { status: 422 }
       );
+    }
+
+    // Verify each student write access
+    if (session.role === "teacher") {
+      for (const row of scoreValidation.validatedRows) {
+        await verifyTeacherStudentScoreAccess(
+          session.id,
+          session.school_id,
+          classId,
+          subjectId,
+          row.student_id
+        );
+      }
     }
 
     // 8. Atomic transaction to write SUBMITTED scores
@@ -164,30 +213,30 @@ export async function POST(request: NextRequest) {
       )
     );
 
-    // Record audit log for score submission
+    // Invalidate caches
+    invalidatePublishedReports(session.school_id, termId);
+
+    // 9. Write Immutable Audit Log
     await recordAuditLog({
-      action: "SCORE_SUBMIT",
       schoolId: session.school_id,
       userId: session.id,
+      action: "SCORE_SUBMIT",
       entity: "Result",
       entityId: `${classId}:${subjectId}:${termId}`,
       newValues: {
-        class_id: classId,
-        subject_id: subjectId,
-        term_id: termId,
-        count: scoreValidation.validatedRows.length,
-        status: "SUBMITTED",
+        submitted_by: session.id,
+        role: session.role,
+        student_count: scoreValidation.validatedRows.length,
+        submitted_at: new Date().toISOString(),
       },
     });
-
-    // Invalidate report card cache when scores are submitted / republished
-    invalidatePublishedReports(session.school_id, termId);
 
     return NextResponse.json({
       success: true,
       count: scoreValidation.validatedRows.length,
       status: "SUBMITTED",
-      message: "Scores have been submitted and locked successfully.",
+      submittedCount: scoreValidation.validatedRows.length,
+      message: `Scores have been submitted and locked successfully (${scoreValidation.validatedRows.length} students).`,
     });
   } catch (error) {
     if (error instanceof AuthError) {

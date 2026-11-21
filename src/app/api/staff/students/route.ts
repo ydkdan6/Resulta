@@ -59,6 +59,13 @@ export async function GET(request: NextRequest) {
               name: true,
             },
           },
+          department_id: true,
+          department: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
         },
       }),
       prisma.student.count({ where }),

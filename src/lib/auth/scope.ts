@@ -148,8 +148,90 @@ export async function verifyTeacherAssignment(
 }
 
 /**
- * Retrieves only the classes assigned to a specific teacher within their school.
- * Guarantees a teacher cannot see unassigned classes.
+ * Verifies whether a student is eligible for a score entry/update by a teacher.
+ * Rules:
+ * 1. Student must belong to the specified class and school.
+ * 2. Teacher must have an assignment for (school, teacher, class, subject) with either:
+ *    - null department (all departments)
+ *    - the student's department_id
+ * 3. If student has a department:
+ *    - If assignment specifies a department, student's department must match it.
+ *    - The department MUST offer the subject via DepartmentSubject.
+ *    If department doesn't offer subject or doesn't match teacher assignment, access is DENIED (403).
+ * 4. If student has no department (null):
+ *    - Student appears and is writeable under any assignment covering the class & subject.
+ */
+export async function verifyTeacherStudentScoreAccess(
+  teacherId: string,
+  schoolId: string,
+  classId: string,
+  subjectId: string,
+  studentId: string
+): Promise<boolean> {
+  // Fetch student
+  const student = await prisma.student.findUnique({
+    where: { id: studentId },
+    select: { id: true, school_id: true, class_id: true, department_id: true },
+  });
+
+  if (!student) {
+    throw new AuthError('Student not found.', 404);
+  }
+
+  if (student.school_id !== schoolId) {
+    throw new AuthError('Student not found in this school.', 404);
+  }
+
+  if (student.class_id !== classId) {
+    throw new AuthError('Student does not belong to this class.', 403);
+  }
+
+  // Fetch teacher assignments for this class and subject
+  const assignments = await prisma.teacherAssignment.findMany({
+    where: {
+      school_id: schoolId,
+      teacher_id: teacherId,
+      class_id: classId,
+      subject_id: subjectId,
+    },
+    select: { id: true, department_id: true },
+  });
+
+  if (assignments.length === 0) {
+    throw new AuthError('Access denied: You are not assigned to this subject in this class.', 403);
+  }
+
+  const hasAllDept = assignments.some((a) => a.department_id === null);
+  const assignedDeptIds = new Set(assignments.map((a) => a.department_id).filter(Boolean) as string[]);
+
+  if (student.department_id) {
+    // Student has a department
+    // Check if teacher is assigned to this department or all departments
+    if (!hasAllDept && !assignedDeptIds.has(student.department_id)) {
+      throw new AuthError('Access denied: You are not assigned to this student\'s department.', 403);
+    }
+
+    // Check if student's department offers the subject
+    const deptSubject = await prisma.departmentSubject.findUnique({
+      where: {
+        department_id_subject_id: {
+          department_id: student.department_id,
+          subject_id: subjectId,
+        },
+      },
+    });
+
+    if (!deptSubject) {
+      throw new AuthError('Access denied: Subject is not offered by student\'s department.', 403);
+    }
+  }
+
+  return true;
+}
+
+/**
+ * Retrieves only the classes assigned to a specific teacher within their school,
+ * grouped by class and subject with their assigned departments.
  */
 export async function getTeacherAssignedClasses(teacherId: string, schoolId: string) {
   const assignments = await prisma.teacherAssignment.findMany({
@@ -175,15 +257,26 @@ export async function getTeacherAssignedClasses(teacherId: string, schoolId: str
           code: true,
         },
       },
+      department: {
+        select: {
+          id: true,
+          name: true,
+        },
+      },
     },
   });
 
-  // Group subjects by class
+  // Group by class -> subject -> list of departments
   const classMap = new Map<string, {
     id: string;
     name: string;
     studentCount: number;
-    subjects: { id: string; name: string; code: string | null }[];
+    subjects: {
+      id: string;
+      name: string;
+      code: string | null;
+      departments: { id: string | null; name: string }[];
+    }[];
   }>();
 
   for (const a of assignments) {
@@ -196,12 +289,25 @@ export async function getTeacherAssignedClasses(teacherId: string, schoolId: str
       });
     }
     const entry = classMap.get(a.class.id)!;
-    if (!entry.subjects.some((s) => s.id === a.subject.id)) {
-      entry.subjects.push({
+    let subj = entry.subjects.find((s) => s.id === a.subject.id);
+    if (!subj) {
+      subj = {
         id: a.subject.id,
         name: a.subject.name,
         code: a.subject.code,
-      });
+        departments: [],
+      };
+      entry.subjects.push(subj);
+    }
+
+    if (a.department_id === null) {
+      if (!subj.departments.some((d) => d.id === null)) {
+        subj.departments.push({ id: null, name: 'All departments' });
+      }
+    } else if (a.department) {
+      if (!subj.departments.some((d) => d.id === a.department!.id)) {
+        subj.departments.push({ id: a.department.id, name: a.department.name });
+      }
     }
   }
 

@@ -18,7 +18,9 @@ import {
   Trash2,
   X,
   Users,
-  RefreshCw
+  RefreshCw,
+  Layers,
+  Edit2
 } from "lucide-react";
 import RosterManager from "./RosterManager";
 import SharesTabClient from "./SharesTabClient";
@@ -49,6 +51,7 @@ interface TeacherData {
     id: string;
     class: { id: string; name: string };
     subject: { id: string; name: string; code: string | null };
+    department?: { id: string; name: string } | null;
   }[];
 }
 
@@ -104,7 +107,7 @@ export default function AdminDashboardClient({
   initialBatches = [],
 }: Props) {
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<"schools" | "create-school" | "create-admin" | "create-teacher" | "assign-teacher" | "grading-schemes" | "student-roster" | "payments-and-shares" | "waitlist" | "audit-logs">("schools");
+  const [activeTab, setActiveTab] = useState<"schools" | "create-school" | "create-admin" | "create-teacher" | "assign-teacher" | "departments" | "grading-schemes" | "student-roster" | "payments-and-shares" | "waitlist" | "audit-logs">("schools");
 
 
 
@@ -148,6 +151,26 @@ export default function AdminDashboardClient({
   const [assignTeacherId, setAssignTeacherId] = useState("");
   const [assignClassId, setAssignClassId] = useState("");
   const [assignSubjectId, setAssignSubjectId] = useState("");
+  const [assignAllDepartments, setAssignAllDepartments] = useState(true);
+  const [assignDepartmentIds, setAssignDepartmentIds] = useState<string[]>([]);
+  const [schoolDepartments, setSchoolDepartments] = useState<any[]>([]);
+  const [loadingSchoolDepartments, setLoadingSchoolDepartments] = useState(false);
+
+  // Departments tab state
+  const [deptSchoolId, setDeptSchoolId] = useState<string>("");
+  const [deptList, setDeptList] = useState<any[]>([]);
+  const [loadingDepts, setLoadingDepts] = useState(false);
+  const [newDeptName, setNewDeptName] = useState("");
+  const [editingDeptId, setEditingDeptId] = useState<string | null>(null);
+  const [editDeptName, setEditDeptName] = useState("");
+  const [editDeptSubjects, setEditDeptSubjects] = useState<string[]>([]);
+  const [editDeptArchived, setEditDeptArchived] = useState(false);
+
+  // Student Department assign state
+  const [studentSearchAdm, setStudentSearchAdm] = useState("");
+  const [searchedStudent, setSearchedStudent] = useState<any | null>(null);
+  const [searchingStudent, setSearchingStudent] = useState(false);
+  const [assignStudentDeptId, setAssignStudentDeptId] = useState("");
 
   // Feedback states
   const [message, setMessage] = useState<{ text: string; type: "success" | "error" } | null>(null);
@@ -277,11 +300,176 @@ export default function AdminDashboardClient({
     }
   };
 
+  // Fetch departments for a school
+  const fetchDepartmentsForSchool = async (schoolId: string) => {
+    if (!schoolId) {
+      setDeptList([]);
+      return;
+    }
+    setLoadingDepts(true);
+    try {
+      const res = await fetch(`/api/admin/departments?schoolId=${schoolId}`);
+      if (!res.ok) throw new Error("Failed to load departments.");
+      const data = await res.json();
+      setDeptList(data.departments || []);
+    } catch (err: unknown) {
+      setMessage({ text: err instanceof Error ? err.message : "Error", type: "error" });
+    } finally {
+      setLoadingDepts(false);
+    }
+  };
+
+  const handleSelectDeptSchool = (schoolId: string) => {
+    setDeptSchoolId(schoolId);
+    setEditingDeptId(null);
+    setSearchedStudent(null);
+    fetchDepartmentsForSchool(schoolId);
+  };
+
+  // Fetch departments for assignment screen
+  const fetchAssignSchoolDepartments = async (schoolId: string) => {
+    if (!schoolId) {
+      setSchoolDepartments([]);
+      return;
+    }
+    setLoadingSchoolDepartments(true);
+    try {
+      const res = await fetch(`/api/admin/departments?schoolId=${schoolId}`);
+      if (res.ok) {
+        const data = await res.json();
+        setSchoolDepartments(data.departments || []);
+      }
+    } finally {
+      setLoadingSchoolDepartments(false);
+    }
+  };
+
+  const handleCreateDepartment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!deptSchoolId || !newDeptName.trim()) return;
+    setLoading(true);
+    setMessage(null);
+    try {
+      const res = await fetch("/api/admin/departments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          school_id: deptSchoolId,
+          name: newDeptName.trim(),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to create department.");
+      setMessage({ text: `Department "${data.department.name}" created successfully.`, type: "success" });
+      setNewDeptName("");
+      fetchDepartmentsForSchool(deptSchoolId);
+    } catch (err: unknown) {
+      setMessage({ text: err instanceof Error ? err.message : "Error", type: "error" });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleUpdateDepartment = async (deptId: string) => {
+    setLoading(true);
+    setMessage(null);
+    try {
+      const res = await fetch(`/api/admin/departments/${deptId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: editDeptName.trim() || undefined,
+          subject_ids: editDeptSubjects,
+          is_archived: editDeptArchived,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to update department.");
+      setMessage({ text: "Department updated successfully.", type: "success" });
+      setEditingDeptId(null);
+      fetchDepartmentsForSchool(deptSchoolId);
+    } catch (err: unknown) {
+      setMessage({ text: err instanceof Error ? err.message : "Error", type: "error" });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Search student for department assignment
+  const handleSearchStudent = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!deptSchoolId || !studentSearchAdm.trim()) return;
+    setSearchingStudent(true);
+    setSearchedStudent(null);
+    try {
+      const res = await fetch(`/api/staff/students?search=${encodeURIComponent(studentSearchAdm.trim())}`);
+      const data = await res.json();
+      const match = (data.students || []).find((s: any) =>
+        s.admission_number.toLowerCase() === studentSearchAdm.trim().toLowerCase()
+      );
+      if (match) {
+        setSearchedStudent(match);
+        setAssignStudentDeptId(match.department_id || "");
+      } else {
+        setMessage({ text: `No student found with admission number "${studentSearchAdm}".`, type: "error" });
+      }
+    } catch (err: unknown) {
+      setMessage({ text: err instanceof Error ? err.message : "Search error", type: "error" });
+    } finally {
+      setSearchingStudent(false);
+    }
+  };
+
+  const handleAssignStudentDept = async () => {
+    if (!searchedStudent) return;
+    setLoading(true);
+    setMessage(null);
+    try {
+      const res = await fetch(`/api/admin/students/${searchedStudent.id}/department`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          department_id: assignStudentDeptId || null,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to update student department.");
+      setMessage({ text: "Student department updated successfully.", type: "success" });
+      setSearchedStudent({
+        ...searchedStudent,
+        department_id: assignStudentDeptId || null,
+        department: deptList.find((d: any) => d.id === assignStudentDeptId) || null,
+      });
+    } catch (err: unknown) {
+      setMessage({ text: err instanceof Error ? err.message : "Error", type: "error" });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // 4. Create Teacher Assignment
   const handleAssignTeacher = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setMessage(null);
+
+    // Client-side verification: reject subject if chosen department does not offer it
+    if (!assignAllDepartments && assignDepartmentIds.length > 0) {
+      for (const deptId of assignDepartmentIds) {
+        const dept = schoolDepartments.find((d) => d.id === deptId);
+        if (dept) {
+          const offeredSubjIds = new Set((dept.departmentSubjects || []).map((ds: any) => ds.subject_id || ds.subject?.id));
+          if (!offeredSubjIds.has(assignSubjectId)) {
+            setLoading(false);
+            setMessage({
+              text: `Subject is not offered by department "${dept.name}". Please select an offered subject or update department offerings.`,
+              type: "error",
+            });
+            return;
+          }
+        }
+      }
+    }
 
     try {
       const res = await fetch("/api/admin/teachers/assignments", {
@@ -292,6 +480,8 @@ export default function AdminDashboardClient({
           teacher_id: assignTeacherId,
           class_id: assignClassId,
           subject_id: assignSubjectId,
+          all_departments: assignAllDepartments,
+          department_ids: assignAllDepartments ? undefined : assignDepartmentIds,
         }),
       });
 
@@ -511,6 +701,22 @@ export default function AdminDashboardClient({
             </button>
             <button
               onClick={() => {
+                setActiveTab("departments");
+                setMessage(null);
+                if (initialSchools.length > 0 && !deptSchoolId) {
+                  handleSelectDeptSchool(initialSchools[0].id);
+                }
+              }}
+              className={`px-4 py-2.5 text-xs font-mono font-medium transition-colors border-b-2 cursor-pointer ${
+                activeTab === "departments"
+                  ? "border-[#671B24] text-[#671B24]"
+                  : "border-transparent text-[#6B645D] hover:text-[#2C2825]"
+              }`}
+            >
+              Departments
+            </button>
+            <button
+              onClick={() => {
                 setActiveTab("grading-schemes");
                 setMessage(null);
                 if (initialSchools.length > 0 && !selectedSchoolForScheme) {
@@ -716,9 +922,35 @@ export default function AdminDashboardClient({
                                 {t.teacherAssignments.map((a) => (
                                   <span
                                     key={a.id}
-                                    className="px-2 py-0.5 rounded text-[11px] font-mono bg-[#E5EDE5] text-[#3F4E40] border border-[#D3DDD3]"
+                                    className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-mono bg-[#E5EDE5] text-[#3F4E40] border border-[#D3DDD3]"
                                   >
-                                    {a.class.name}: {a.subject.name}
+                                    <span>
+                                      {a.class.name}: {a.subject.name}
+                                      {a.department ? ` (${a.department.name})` : " (All depts)"}
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={async () => {
+                                        if (!confirm(`Remove assignment ${a.class.name} - ${a.subject.name}?`)) return;
+                                        try {
+                                          const res = await fetch(`/api/admin/teachers/assignments/${a.id}`, {
+                                            method: "DELETE",
+                                          });
+                                          if (!res.ok) {
+                                            const data = await res.json().catch(() => ({}));
+                                            throw new Error(data.error || "Failed to remove assignment.");
+                                          }
+                                          setMessage({ text: "Assignment removed successfully.", type: "success" });
+                                          router.refresh();
+                                        } catch (err: unknown) {
+                                          setMessage({ text: err instanceof Error ? err.message : "Error", type: "error" });
+                                        }
+                                      }}
+                                      title="Remove assignment"
+                                      className="text-[#671B24] hover:text-[#52151D] cursor-pointer"
+                                    >
+                                      <Trash2 className="w-3 h-3" />
+                                    </button>
                                   </span>
                                 ))}
                               </div>
@@ -1005,10 +1237,13 @@ export default function AdminDashboardClient({
                   required
                   value={assignSchoolId}
                   onChange={(e) => {
-                    setAssignSchoolId(e.target.value);
+                    const sid = e.target.value;
+                    setAssignSchoolId(sid);
                     setAssignTeacherId("");
                     setAssignClassId("");
                     setAssignSubjectId("");
+                    setAssignDepartmentIds([]);
+                    fetchAssignSchoolDepartments(sid);
                   }}
                   className="w-full px-3 py-2 text-sm bg-[#FAF8F3] border border-[#D9D3C7] rounded-sm text-[#2C2825]"
                 >
@@ -1080,6 +1315,67 @@ export default function AdminDashboardClient({
                     </select>
                   </div>
 
+                  {/* Department scoping */}
+                  <div className="border border-[#E9E4D9] bg-[#FAF8F3] p-3 rounded-sm space-y-2">
+                    <span className="block text-xs font-mono uppercase text-[#47423D] font-medium">
+                      Department Assignment Scope
+                    </span>
+                    <label className="flex items-center gap-2 cursor-pointer text-xs text-[#2C2825]">
+                      <input
+                        type="checkbox"
+                        checked={assignAllDepartments}
+                        onChange={(e) => {
+                          setAssignAllDepartments(e.target.checked);
+                          if (e.target.checked) setAssignDepartmentIds([]);
+                        }}
+                        className="rounded border-[#D5CFC4] text-[#3F4E40]"
+                      />
+                      <span className="font-medium">All Departments (Covers all students whose dept offers the subject + students with no department)</span>
+                    </label>
+
+                    {!assignAllDepartments && (
+                      <div className="pl-5 pt-1 space-y-1.5 border-t border-[#E9E4D9] mt-2">
+                        <span className="text-[11px] text-[#6B645D] block">
+                          Tick one or more departments (one assignment line will be created per department):
+                        </span>
+                        {loadingSchoolDepartments ? (
+                          <span className="text-xs font-mono text-[#6B645D]">Loading school departments...</span>
+                        ) : schoolDepartments.filter((d) => !d.is_archived).length === 0 ? (
+                          <span className="text-xs text-[#6B645D] italic">No active departments found. Create departments under the Departments tab first.</span>
+                        ) : (
+                          schoolDepartments.filter((d) => !d.is_archived).map((dept) => {
+                            const offersSubject = (dept.departmentSubjects || []).some(
+                              (ds: any) => (ds.subject_id || ds.subject?.id) === assignSubjectId
+                            );
+                            return (
+                              <label key={dept.id} className="flex items-center gap-2 cursor-pointer text-xs text-[#2C2825]">
+                                <input
+                                  type="checkbox"
+                                  checked={assignDepartmentIds.includes(dept.id)}
+                                  disabled={assignSubjectId ? !offersSubject : false}
+                                  onChange={(e) => {
+                                    if (e.target.checked) {
+                                      setAssignDepartmentIds([...assignDepartmentIds, dept.id]);
+                                    } else {
+                                      setAssignDepartmentIds(assignDepartmentIds.filter((id) => id !== dept.id));
+                                    }
+                                  }}
+                                  className="rounded border-[#D5CFC4] text-[#3F4E40] disabled:opacity-40"
+                                />
+                                <span className={!offersSubject && assignSubjectId ? "text-[#8C827A] line-through" : ""}>
+                                  {dept.name}
+                                </span>
+                                {assignSubjectId && !offersSubject && (
+                                  <span className="text-[10px] text-[#A33D29] font-mono">(Does not offer subject)</span>
+                                )}
+                              </label>
+                            );
+                          })
+                        )}
+                      </div>
+                    )}
+                  </div>
+
                   <button
                     type="submit"
                     disabled={loading}
@@ -1090,6 +1386,287 @@ export default function AdminDashboardClient({
                 </>
               )}
             </form>
+          </div>
+        )}
+
+        {/* TAB: Departments Management */}
+        {activeTab === "departments" && (
+          <div className="space-y-8">
+            <div className="border border-[#E9E4D9] bg-[#FFFFFF] p-5 rounded-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div>
+                <span className="text-xs font-mono font-semibold uppercase tracking-wider text-[#47423D] flex items-center gap-2">
+                  <Layers className="w-4 h-4 text-[#671B24]" /> Manage School Departments & Offered Subjects
+                </span>
+                <p className="text-xs text-[#6B645D] mt-1">
+                  Create departments (e.g. Science, Arts, Commercial) and tick the subjects each department offers.
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <label className="text-xs font-mono text-[#47423D]">School:</label>
+                <select
+                  value={deptSchoolId}
+                  onChange={(e) => handleSelectDeptSchool(e.target.value)}
+                  className="px-3 py-2 text-xs font-mono bg-[#FAF8F3] border border-[#D9D3C7] rounded-sm text-[#2C2825]"
+                >
+                  <option value="">-- Choose School --</option>
+                  {initialSchools.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name} ({s.slug})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {deptSchoolId && (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                {/* Left: Department List & Subjects */}
+                <div className="space-y-4">
+                  <div className="border border-[#E9E4D9] bg-[#FFFFFF] rounded-sm">
+                    <div className="px-5 py-3.5 border-b border-[#E9E4D9] bg-[#FAF8F3] flex items-center justify-between">
+                      <span className="text-xs font-mono font-semibold uppercase tracking-wider text-[#47423D]">
+                        Departments ({deptList.length})
+                      </span>
+                      <span className="text-[11px] font-mono text-[#6B645D]">Archived departments cannot be deleted</span>
+                    </div>
+
+                    <div className="p-5 space-y-4">
+                      {loadingDepts ? (
+                        <p className="text-xs font-mono text-[#6B645D]">Loading departments...</p>
+                      ) : deptList.length === 0 ? (
+                        <p className="text-xs text-[#6B645D] italic">
+                          No departments created for this school yet. Use the form below to create one.
+                        </p>
+                      ) : (
+                        <div className="space-y-3">
+                          {deptList.map((d: any) => {
+                            const isEditing = editingDeptId === d.id;
+                            const currentSchool = initialSchools.find((s) => s.id === deptSchoolId);
+                            const offeredSubjects = (d.departmentSubjects || []).map((ds: any) => ds.subject);
+
+                            return (
+                              <div
+                                key={d.id}
+                                className={`p-4 border rounded-sm transition-all ${
+                                  d.is_archived
+                                    ? "bg-[#F7F5F0] border-[#E2DDD3] opacity-75"
+                                    : "bg-white border-[#E9E4D9]"
+                                }`}
+                              >
+                                {isEditing ? (
+                                  <div className="space-y-3">
+                                    <div className="flex items-center justify-between">
+                                      <input
+                                        type="text"
+                                        value={editDeptName}
+                                        onChange={(e) => setEditDeptName(e.target.value)}
+                                        className="text-sm font-semibold px-2 py-1 border border-[#D9D3C7] rounded bg-[#FAF8F3] text-[#2C2825]"
+                                      />
+                                      <div className="flex items-center gap-2">
+                                        <button
+                                          type="button"
+                                          disabled={loading}
+                                          onClick={() => handleUpdateDepartment(d.id)}
+                                          className="px-2.5 py-1 text-xs font-mono bg-[#3F4E40] text-white rounded cursor-pointer hover:bg-[#2C382D]"
+                                        >
+                                          Save
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => setEditingDeptId(null)}
+                                          className="px-2.5 py-1 text-xs font-mono text-[#6B645D] hover:text-[#2C2825]"
+                                        >
+                                          Cancel
+                                        </button>
+                                      </div>
+                                    </div>
+
+                                    <div>
+                                      <span className="text-xs font-mono uppercase text-[#47423D] block mb-1">
+                                        Tick Offered Subjects:
+                                      </span>
+                                      <div className="grid grid-cols-2 gap-1.5 max-h-48 overflow-y-auto p-2 bg-[#FAF8F3] border border-[#E9E4D9] rounded-sm">
+                                        {(currentSchool?.subjects || []).map((subj: any) => (
+                                          <label key={subj.id} className="flex items-center gap-1.5 text-xs cursor-pointer text-[#2C2825]">
+                                            <input
+                                              type="checkbox"
+                                              checked={editDeptSubjects.includes(subj.id)}
+                                              onChange={(e) => {
+                                                if (e.target.checked) {
+                                                  setEditDeptSubjects([...editDeptSubjects, subj.id]);
+                                                } else {
+                                                  setEditDeptSubjects(editDeptSubjects.filter((id) => id !== subj.id));
+                                                }
+                                              }}
+                                              className="rounded border-[#D5CFC4] text-[#3F4E40]"
+                                            />
+                                            <span className="truncate">{subj.name}</span>
+                                          </label>
+                                        ))}
+                                      </div>
+                                    </div>
+
+                                    <label className="flex items-center gap-2 cursor-pointer text-xs text-[#2C2825]">
+                                      <input
+                                        type="checkbox"
+                                        checked={editDeptArchived}
+                                        onChange={(e) => setEditDeptArchived(e.target.checked)}
+                                        className="rounded border-[#D5CFC4] text-[#671B24]"
+                                      />
+                                      <span>Archive department (departments are archived, never deleted)</span>
+                                    </label>
+                                  </div>
+                                ) : (
+                                  <div>
+                                    <div className="flex items-center justify-between">
+                                      <div className="flex items-center gap-2">
+                                        <span className="text-sm font-semibold text-[#2C2825]">{d.name}</span>
+                                        {d.is_archived && (
+                                          <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-[#E9E4D9] text-[#6B645D]">
+                                            Archived
+                                          </span>
+                                        )}
+                                        <span className="text-[11px] font-mono text-[#6B645D]">
+                                          ({d._count?.students || 0} students)
+                                        </span>
+                                      </div>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setEditingDeptId(d.id);
+                                          setEditDeptName(d.name);
+                                          setEditDeptSubjects((d.departmentSubjects || []).map((ds: any) => ds.subject_id || ds.subject?.id));
+                                          setEditDeptArchived(d.is_archived);
+                                        }}
+                                        className="text-xs font-mono text-[#671B24] hover:underline flex items-center gap-1 cursor-pointer"
+                                      >
+                                        <Edit2 className="w-3 h-3" /> Edit & Subjects
+                                      </button>
+                                    </div>
+
+                                    <div className="mt-2 flex flex-wrap gap-1">
+                                      {offeredSubjects.length === 0 ? (
+                                        <span className="text-[11px] text-[#A33D29] italic">No subjects offered yet</span>
+                                      ) : (
+                                        offeredSubjects.map((s: any) => (
+                                          <span
+                                            key={s.id}
+                                            className="px-1.5 py-0.5 text-[10px] font-mono bg-[#E8EFF8] text-[#2B4C7E] rounded border border-[#D2E0F2]"
+                                          >
+                                            {s.name}
+                                          </span>
+                                        ))
+                                      )}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+
+                      {/* Create New Department Form */}
+                      <form onSubmit={handleCreateDepartment} className="pt-3 border-t border-[#E9E4D9] space-y-3">
+                        <span className="text-xs font-mono uppercase font-semibold text-[#47423D] block">
+                          + Add New Department
+                        </span>
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            required
+                            placeholder="e.g. Science, Arts, Commercial"
+                            value={newDeptName}
+                            onChange={(e) => setNewDeptName(e.target.value)}
+                            className="flex-1 px-3 py-1.5 text-xs bg-[#FAF8F3] border border-[#D9D3C7] rounded-sm text-[#2C2825]"
+                          />
+                          <button
+                            type="submit"
+                            disabled={loading || !newDeptName.trim()}
+                            className="px-4 py-1.5 bg-[#671B24] text-white text-xs font-mono rounded-sm hover:bg-[#52151D] disabled:opacity-50 cursor-pointer"
+                          >
+                            Create
+                          </button>
+                        </div>
+                      </form>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Right: Assign Student Department Record */}
+                <div className="space-y-4">
+                  <div className="border border-[#E9E4D9] bg-[#FFFFFF] rounded-sm p-5 space-y-4">
+                    <div className="border-b border-[#E9E4D9] pb-3">
+                      <span className="text-xs font-mono font-semibold uppercase tracking-wider text-[#47423D] block">
+                        Assign Student Department
+                      </span>
+                      <p className="text-xs text-[#6B645D] mt-1">
+                        Look up any student by admission number to assign or update their department record.
+                      </p>
+                    </div>
+
+                    <form onSubmit={handleSearchStudent} className="flex gap-2">
+                      <input
+                        type="text"
+                        required
+                        placeholder="Student Admission Number (e.g. ADM001)"
+                        value={studentSearchAdm}
+                        onChange={(e) => setStudentSearchAdm(e.target.value)}
+                        className="flex-1 px-3 py-1.5 text-xs bg-[#FAF8F3] border border-[#D9D3C7] rounded-sm text-[#2C2825] font-mono"
+                      />
+                      <button
+                        type="submit"
+                        disabled={searchingStudent || !studentSearchAdm.trim()}
+                        className="px-4 py-1.5 bg-[#3F4E40] text-white text-xs font-mono rounded-sm hover:bg-[#2C382D] disabled:opacity-50 cursor-pointer"
+                      >
+                        {searchingStudent ? "Searching..." : "Lookup"}
+                      </button>
+                    </form>
+
+                    {searchedStudent && (
+                      <div className="p-4 bg-[#FAF8F3] border border-[#E9E4D9] rounded-sm space-y-3 text-xs">
+                        <div className="flex justify-between items-center border-b border-[#E9E4D9] pb-2">
+                          <div>
+                            <span className="font-semibold text-sm text-[#2C2825] block">{searchedStudent.full_name}</span>
+                            <span className="font-mono text-[#6B645D] text-[11px]">{searchedStudent.admission_number} ({searchedStudent.class?.name})</span>
+                          </div>
+                          <span className="text-xs font-mono px-2 py-0.5 rounded bg-[#E5EDE5] text-[#3F4E40]">
+                            {searchedStudent.department?.name || "No Department"}
+                          </span>
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-mono uppercase text-[#47423D] mb-1">
+                            Assign Department:
+                          </label>
+                          <select
+                            value={assignStudentDeptId}
+                            onChange={(e) => setAssignStudentDeptId(e.target.value)}
+                            className="w-full px-3 py-2 text-xs font-mono bg-white border border-[#D9D3C7] rounded-sm text-[#2C2825]"
+                          >
+                            <option value="">-- No Department (All Class Subjects) --</option>
+                            {deptList.filter((d: any) => !d.is_archived).map((d: any) => (
+                              <option key={d.id} value={d.id}>
+                                {d.name}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <button
+                          type="button"
+                          disabled={loading}
+                          onClick={handleAssignStudentDept}
+                          className="w-full py-2 bg-[#671B24] text-white text-xs font-mono rounded-sm hover:bg-[#52151D] disabled:opacity-50 cursor-pointer"
+                        >
+                          {loading ? "Updating..." : "Update Student Department"}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
 

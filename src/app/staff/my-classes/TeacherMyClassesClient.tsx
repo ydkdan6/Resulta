@@ -102,18 +102,29 @@ export default function TeacherMyClassesClient({
                         </td>
                         <td className="py-3.5 px-5">
                           <div className="flex flex-wrap gap-1.5">
-                            {cls.subjects.map((subj) => (
-                              <button
-                                key={subj.id}
-                                type="button"
-                                onClick={() => handleEnterScoresFor(cls.id, subj.id)}
-                                title={`Enter scores for ${subj.name}`}
-                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-mono bg-[#E5EDE5] text-[#3F4E40] border border-[#D3DDD3] hover:bg-[#D3DDD3] transition-colors cursor-pointer"
-                              >
-                                <span>{subj.name} {subj.code ? `(${subj.code})` : ""}</span>
-                                <Edit3 className="w-2.5 h-2.5 opacity-70" />
-                              </button>
-                            ))}
+                            {cls.subjects.map((subj: any) => {
+                              const deptNames = (subj.departments || []).map((d: any) => d.name).join(", ");
+                              return (
+                                <button
+                                  key={subj.id}
+                                  type="button"
+                                  onClick={() => handleEnterScoresFor(cls.id, subj.id)}
+                                  title={`Enter scores for ${subj.name}${deptNames ? ` (${deptNames})` : ""}`}
+                                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-[11px] font-mono bg-[#E5EDE5] text-[#3F4E40] border border-[#D3DDD3] hover:bg-[#D3DDD3] transition-colors cursor-pointer"
+                                >
+                                  <span>
+                                    <strong>{subj.name}</strong>
+                                    {subj.code ? ` (${subj.code})` : ""}
+                                    {deptNames && (
+                                      <span className="ml-1 text-[10px] text-[#2C382D] opacity-80">
+                                        [{deptNames}]
+                                      </span>
+                                    )}
+                                  </span>
+                                  <Edit3 className="w-2.5 h-2.5 opacity-70" />
+                                </button>
+                              );
+                            })}
                           </div>
                         </td>
                         <td className="py-3.5 px-5 text-center font-mono">

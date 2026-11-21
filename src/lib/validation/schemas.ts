@@ -220,6 +220,8 @@ export const AdminAssignTeacherSchema = z.object({
   school_id: z.string().min(1, 'school_id is required.'),
   class_id: z.string().min(1, 'class_id is required.'),
   subject_id: z.string().min(1, 'subject_id is required.'),
+  department_ids: z.array(z.string().min(1)).optional(),
+  all_departments: z.boolean().optional(),
 });
 export type AdminAssignTeacherInput = z.infer<typeof AdminAssignTeacherSchema>;
 

@@ -45,13 +45,29 @@ export async function POST(
       where: { id: schoolId },
       include: {
         classes: { select: { id: true, name: true } },
+        departments: {
+          select: {
+            id: true,
+            name: true,
+            departmentSubjects: {
+              include: { subject: { select: { name: true } } },
+            },
+          },
+        },
         students: {
           select: {
             id: true,
             admission_number: true,
             full_name: true,
             class_id: true,
+            department_id: true,
+            not_in_latest_upload: true,
             class: { select: { name: true } },
+            department: { select: { name: true } },
+            results: {
+              where: { status: "SUBMITTED" },
+              select: { subject: { select: { name: true } } },
+            },
           },
         },
       },
@@ -67,12 +83,16 @@ export async function POST(
       rows,
       skipBadRows = false,
       createMissingClasses = false,
+      createMissingDepartments = false,
+      confirmDepartmentChanges = false,
       isCompleteList = false,
     } = body as {
       fileName?: string;
       rows: RawRosterRow[];
       skipBadRows?: boolean;
       createMissingClasses?: boolean;
+      createMissingDepartments?: boolean;
+      confirmDepartmentChanges?: boolean;
       isCompleteList?: boolean;
     };
 
@@ -87,32 +107,81 @@ export async function POST(
       );
     }
 
-    // Full server-side re-validation
-    const existingStudents = school.students.map((s) => ({
+    // Full server-side re-validation: NEVER trust the browser
+    const existingStudents = (school.students || []).map((s) => ({
       admission_number: s.admission_number,
       full_name: s.full_name,
       class_name: s.class?.name || "",
+      department_name: s.department?.name || null,
+      department_id: s.department_id,
+      submittedSubjects: (s.results || []).map((r) => r.subject.name),
     }));
-    const existingClassNames = school.classes.map((c) => c.name);
+    const existingClassNames = (school.classes || []).map((c) => c.name);
+    const existingDepartmentNames = (school.departments || []).map((d) => d.name);
+
+    const departmentSubjectsMap = new Map<string, Set<string>>();
+    for (const d of (school.departments || [])) {
+      departmentSubjectsMap.set(
+        d.name.toLowerCase(),
+        new Set((d.departmentSubjects || []).map((ds) => ds.subject.name.toLowerCase()))
+      );
+    }
 
     const validation = validateRosterRows(
       rows,
       existingStudents,
       existingClassNames,
+      existingDepartmentNames,
+      departmentSubjectsMap,
     );
 
-    if (!skipBadRows && validation.errorCount > 0) {
+    // If unknown departments exist and createMissingDepartments is false -> return 422
+    if (!createMissingDepartments && validation.unknownDepartments.length > 0) {
       return NextResponse.json(
         {
-          error: `Import aborted: ${validation.errorCount} row(s) contain errors. You may enable 'skipBadRows' to import valid rows only.`,
-          errorCount: validation.errorCount,
+          error: `Unknown department(s) found (${validation.unknownDepartments.join(", ")}). Enable auto-create departments or create them first.`,
+          unknownDepartments: validation.unknownDepartments,
         },
         { status: 422 },
       );
     }
 
-    // Filter to rows without errors
-    const validRows = validation.rows.filter((r) => r.errors.length === 0);
+    // If department changes exist and confirmDepartmentChanges is not explicitly checked -> return 422
+    if (validation.departmentChanges.length > 0 && !confirmDepartmentChanges) {
+      return NextResponse.json(
+        {
+          error: "Explicit confirmation required: One or more students have changes to their assigned department.",
+          departmentChanges: validation.departmentChanges,
+        },
+        { status: 422 },
+      );
+    }
+
+    if (!skipBadRows && validation.errorCount > 0) {
+      // If errors were purely due to unknown departments that can now be auto-created, allow it
+      const nonDeptErrors = validation.rows.filter(
+        (r) => r.errors.some((e) => !e.includes("Unknown department"))
+      );
+      if (nonDeptErrors.length > 0 || !createMissingDepartments) {
+        return NextResponse.json(
+          {
+            error: `Import aborted: ${validation.errorCount} row(s) contain errors. You may enable 'skipBadRows' to import valid rows only.`,
+            errorCount: validation.errorCount,
+          },
+          { status: 422 },
+        );
+      }
+    }
+
+    // Filter to rows without unresolvable errors
+    const validRows = validation.rows.filter((r) => {
+      if (r.errors.length === 0) return true;
+      if (createMissingDepartments && r.errors.every((e) => e.includes("Unknown department"))) {
+        return true;
+      }
+      return false;
+    });
+
     if (validRows.length === 0) {
       return NextResponse.json(
         { error: "No valid rows remaining to import" },
@@ -131,11 +200,11 @@ export async function POST(
       );
     }
 
-    // Run atomic transaction with timeout
+    // Run atomic transaction
     const result = await prisma.$transaction(
       async (tx) => {
         // 1. Create missing classes if requested
-        const classMap = new Map<string, string>(); // class name (lower) -> class id
+        const classMap = new Map<string, string>();
         for (const c of school.classes) {
           classMap.set(c.name.trim().toLowerCase(), c.id);
         }
@@ -156,71 +225,88 @@ export async function POST(
           }
         }
 
-        // 2. Map existing students by admission number
-        const existingStudentMap = new Map<string, { id: string }>();
-        for (const s of school.students) {
-          existingStudentMap.set(s.admission_number.trim().toLowerCase(), { id: s.id });
+        // 2. Create missing departments if requested
+        const deptMap = new Map<string, string>();
+        for (const d of (school.departments || [])) {
+          deptMap.set(d.name.trim().toLowerCase(), d.id);
         }
 
-        let newImported = 0;
-        let updatedImported = 0;
-        let unchangedImported = 0;
-
-        const importedAdmissionNumbers = new Set<string>();
-
-        // Process in batches
-        const BATCH_SIZE = 150;
-        for (let i = 0; i < validRows.length; i += BATCH_SIZE) {
-          const chunk = validRows.slice(i, i + BATCH_SIZE);
-
-          for (const row of chunk) {
-            const admKey = row.admission_number.trim().toLowerCase();
-            importedAdmissionNumbers.add(admKey);
-            const classId = classMap.get(row.class_name.trim().toLowerCase());
-
-            if (!classId) {
-              throw new Error(`Class ${row.class_name} could not be resolved.`);
-            }
-
-            const existing = existingStudentMap.get(admKey);
-            if (!existing) {
-              await tx.student.create({
+        if (createMissingDepartments && validation.unknownDepartments.length > 0) {
+          for (const newDeptName of validation.unknownDepartments) {
+            const trimmed = newDeptName.trim();
+            const lower = trimmed.toLowerCase();
+            if (!deptMap.has(lower)) {
+              const created = await tx.department.create({
                 data: {
                   school_id: schoolId,
-                  admission_number: row.admission_number.trim(),
-                  full_name: row.full_name,
-                  class_id: classId,
-                  status: "ACTIVE",
-                  not_in_latest_upload: false,
+                  name: trimmed,
                 },
               });
-              newImported++;
-            } else {
-              if (row.action === "UPDATE") {
-                await tx.student.update({
-                  where: { id: existing.id },
-                  data: {
-                    full_name: row.full_name,
-                    class_id: classId,
-                    not_in_latest_upload: false,
-                  },
-                });
-                updatedImported++;
-              } else {
-                // UNCHANGED - clear not_in_latest_upload if it was previously flagged
-                await tx.student.update({
-                  where: { id: existing.id },
-                  data: {
-                    not_in_latest_upload: false,
-                  },
-                });
-                unchangedImported++;
-              }
+              deptMap.set(lower, created.id);
             }
           }
         }
 
-        // 3. Complete list flagging
+        // 3. Upsert student records
+        let newImported = 0;
+        let updatedImported = 0;
+        let unchangedImported = 0;
+        const importedAdmissionNumbers = new Set<string>();
+
+        for (const row of validRows) {
+          const classId = classMap.get(row.class_name.trim().toLowerCase());
+          if (!classId) continue;
+
+          const deptId = row.department_name
+            ? deptMap.get(row.department_name.trim().toLowerCase()) ?? null
+            : null;
+
+          const admKey = row.admission_number.trim().toLowerCase();
+          importedAdmissionNumbers.add(admKey);
+
+          const existing = school.students.find(
+            (s) => s.admission_number.trim().toLowerCase() === admKey,
+          );
+
+          if (!existing) {
+            await tx.student.create({
+              data: {
+                school_id: schoolId,
+                admission_number: row.admission_number.trim(),
+                full_name: row.full_name.trim(),
+                class_id: classId,
+                department_id: deptId,
+                status: "ACTIVE",
+                not_in_latest_upload: false,
+              },
+            });
+            newImported++;
+          } else {
+            const needsUpdate =
+              existing.full_name !== row.full_name.trim() ||
+              existing.class_id !== classId ||
+              existing.department_id !== deptId ||
+              existing.not_in_latest_upload;
+
+            if (needsUpdate) {
+              await tx.student.update({
+                where: { id: existing.id },
+                data: {
+                  full_name: row.full_name.trim(),
+                  class_id: classId,
+                  department_id: deptId,
+                  status: "ACTIVE",
+                  not_in_latest_upload: false,
+                },
+              });
+              updatedImported++;
+            } else {
+              unchangedImported++;
+            }
+          }
+        }
+
+        // 4. Complete list flagging
         let flaggedNotInUploadCount = 0;
         if (isCompleteList) {
           const studentsToFlag = school.students.filter(
@@ -239,33 +325,13 @@ export async function POST(
           }
         }
 
-        // 4. Resolve user_id safely (prevent FK failure if session ID is stale after DB re-seed)
-        let resolvedUserId: string | null = null;
-        if (session.id) {
-          const userRec = await (tx as any).user?.findUnique?.({
-            where: { id: session.id },
-            select: { id: true },
-          });
-          if (userRec) {
-            resolvedUserId = userRec.id;
-          } else if (session.email) {
-            const userByEmail = await (tx as any).user?.findUnique?.({
-              where: { email: session.email.toLowerCase().trim() },
-              select: { id: true },
-            });
-            if (userByEmail) {
-              resolvedUserId = userByEmail.id;
-            }
-          }
-        }
-
-        // 5. Calculate active students and financial snapshot
+        // 5. Financial snapshots & active counts
         const activeCount =
           typeof (tx as any).student?.count === "function"
             ? await tx.student.count({
                 where: { school_id: schoolId, status: "ACTIVE" },
               })
-            : (school.students?.length ?? validRows.length);
+            : ((school.students || []).length || validRows.length);
 
         const schoolPricing =
           typeof (tx as any).school?.findUnique === "function"
@@ -275,17 +341,17 @@ export async function POST(
               })
             : null;
 
-        const cardPrice = schoolPricing?.card_price ?? (school as any).card_price ?? new Prisma.Decimal(2000.0);
-        const platformShare = schoolPricing?.platform_share ?? (school as any).platform_share ?? new Prisma.Decimal(1000.0);
+        const cardPrice = schoolPricing?.card_price ?? new Prisma.Decimal(2000.0);
+        const platformShare = schoolPricing?.platform_share ?? new Prisma.Decimal(1000.0);
         const expectedTotal = cardPrice.mul(activeCount);
         const expectedShare = platformShare.mul(activeCount);
         const schoolShare = expectedTotal.sub(expectedShare);
 
-        // 6. Record Import History (no student names logged)
-        const importRecord = await (tx as any).studentImport?.create?.({
+        // 6. Record Import History
+        const importRecord = await tx.studentImport.create({
           data: {
             school_id: schoolId,
-            user_id: resolvedUserId,
+            user_id: session.id,
             file_name: fileName,
             new_count: newImported,
             updated_count: updatedImported,
@@ -298,11 +364,11 @@ export async function POST(
           },
         });
 
-        // 7. Audit Log (no student names logged)
+        // 7. Audit Log with COUNTS ONLY (no student PII)
         await tx.auditLog.create({
           data: {
             school_id: schoolId,
-            user_id: resolvedUserId,
+            user_id: session.id,
             action: "ROSTER_IMPORT",
             entity: "Student",
             new_values: {
@@ -310,6 +376,7 @@ export async function POST(
               newImported,
               updatedImported,
               unchangedImported,
+              departmentChangesCount: validation.departmentChanges.length,
               flaggedNotInUploadCount,
               isCompleteList,
               active_student_count: activeCount,
@@ -324,6 +391,7 @@ export async function POST(
           newImported,
           updatedImported,
           unchangedImported,
+          departmentChangesCount: validation.departmentChanges.length,
           errorCount: validation.errorCount,
           flaggedNotInUploadCount,
           importId: importRecord?.id || null,
@@ -334,7 +402,7 @@ export async function POST(
         };
       },
       {
-        timeout: 60000, // 60s timeout for up to 3000 rows
+        timeout: 60000,
       },
     );
 

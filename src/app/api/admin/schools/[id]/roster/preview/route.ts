@@ -43,11 +43,27 @@ export async function POST(
       where: { id: schoolId },
       include: {
         classes: { select: { id: true, name: true } },
+        departments: {
+          select: {
+            id: true,
+            name: true,
+            departmentSubjects: {
+              include: { subject: { select: { name: true } } },
+            },
+          },
+        },
         students: {
           select: {
+            id: true,
             admission_number: true,
             full_name: true,
+            department_id: true,
             class: { select: { name: true } },
+            department: { select: { name: true } },
+            results: {
+              where: { status: "SUBMITTED" },
+              select: { subject: { select: { name: true } } },
+            },
           },
         },
       },
@@ -93,19 +109,34 @@ export async function POST(
     );
 
     // Map existing students for comparison
-    const existingStudents = school.students.map((s) => ({
+    const existingStudents = (school.students || []).map((s) => ({
       admission_number: s.admission_number,
       full_name: s.full_name,
       class_name: s.class?.name || "",
+      department_name: s.department?.name || null,
+      department_id: s.department_id,
+      submittedSubjects: (s.results || []).map((r) => r.subject.name),
     }));
 
-    const existingClassNames = school.classes.map((c) => c.name);
+    const existingClassNames = (school.classes || []).map((c) => c.name);
+    const existingDepartmentNames = (school.departments || []).map((d) => d.name);
+
+    // Map department -> offered subjects
+    const departmentSubjectsMap = new Map<string, Set<string>>();
+    for (const d of (school.departments || [])) {
+      departmentSubjectsMap.set(
+        d.name.toLowerCase(),
+        new Set((d.departmentSubjects || []).map((ds) => ds.subject.name.toLowerCase()))
+      );
+    }
 
     // Validate rows
     const validationResult = validateRosterRows(
       rawRows,
       existingStudents,
       existingClassNames,
+      existingDepartmentNames,
+      departmentSubjectsMap,
     );
 
     return NextResponse.json({

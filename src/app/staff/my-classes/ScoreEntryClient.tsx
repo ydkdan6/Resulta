@@ -26,6 +26,11 @@ interface Student {
   admission_number: string;
   full_name: string;
   status: string;
+  department_id?: string | null;
+  department?: {
+    id: string;
+    name: string;
+  } | null;
 }
 
 interface Part {
@@ -139,6 +144,7 @@ export default function ScoreEntryClient({
 
   // Search & filter state
   const [searchQuery, setSearchQuery] = useState("");
+  const [selectedDepartmentFilter, setSelectedDepartmentFilter] = useState<string>("ALL");
 
   // Multi-selection state for row deletion
   const [selectedStudentIds, setSelectedStudentIds] = useState<Set<string>>(new Set());
@@ -371,16 +377,53 @@ export default function ScoreEntryClient({
     }
   }, [selectedClassId, selectedSubjectId, selectedTermId]);
 
-  // Filtered rows based on search query (admission number or student name)
+  // Student map to resolve departments
+  const studentMap = useMemo(() => {
+    return new Map(students.map((s) => [s.id, s]));
+  }, [students]);
+
+  // Available departments in currently loaded class
+  const availableDepartments = useMemo(() => {
+    const depts = new Map<string, string>();
+    for (const s of students) {
+      if (s.department_id && s.department?.name) {
+        depts.set(s.department_id, s.department.name);
+      }
+    }
+    return Array.from(depts.entries()).map(([id, name]) => ({ id, name }));
+  }, [students]);
+
+  // Filtered rows based on search query and department filter
   const filteredScoreRows = useMemo(() => {
-    if (!searchQuery.trim()) return scoreRows;
-    const q = searchQuery.toLowerCase().trim();
-    return scoreRows.filter(
-      (r) =>
-        r.admission_number.toLowerCase().includes(q) ||
-        r.full_name.toLowerCase().includes(q)
-    );
-  }, [scoreRows, searchQuery]);
+    let rows = scoreRows;
+
+    // Apply department filter
+    if (selectedDepartmentFilter !== "ALL") {
+      if (selectedDepartmentFilter === "NONE") {
+        rows = rows.filter((r) => {
+          const st = studentMap.get(r.student_id);
+          return !st?.department_id;
+        });
+      } else {
+        rows = rows.filter((r) => {
+          const st = studentMap.get(r.student_id);
+          return st?.department_id === selectedDepartmentFilter;
+        });
+      }
+    }
+
+    // Apply search query
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase().trim();
+      rows = rows.filter(
+        (r) =>
+          r.admission_number.toLowerCase().includes(q) ||
+          r.full_name.toLowerCase().includes(q)
+      );
+    }
+
+    return rows;
+  }, [scoreRows, searchQuery, selectedDepartmentFilter, studentMap]);
 
   // Multi-selection handlers
   const handleToggleSelectAll = () => {
@@ -1171,28 +1214,49 @@ export default function ScoreEntryClient({
             </div>
           )}
 
-          {/* Search Bar & Multi-Select Toolbar */}
+          {/* Search Bar, Department Filter & Multi-Select Toolbar */}
           {reviewStep === "edit" && (
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#FFFFFF] p-3 border border-[#E9E4D9] rounded-sm">
-              {/* Search input by admission number or student name */}
-              <div className="relative w-full sm:w-80">
-                <Search className="w-3.5 h-3.5 text-[#8C827A] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search admission number or name..."
-                  className="w-full pl-8 pr-8 py-1.5 text-xs font-mono border border-[#E9E4D9] rounded-sm bg-[#FAF8F3] text-[#2C2825] focus:outline-none focus:border-[#3F4E40]"
-                />
-                {searchQuery && (
-                  <button
-                    type="button"
-                    onClick={() => setSearchQuery("")}
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#8C827A] hover:text-[#2C2825]"
-                    title="Clear search"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
+              <div className="flex flex-col sm:flex-row sm:items-center gap-3 w-full sm:w-auto">
+                {/* Search input by admission number or student name */}
+                <div className="relative w-full sm:w-72">
+                  <Search className="w-3.5 h-3.5 text-[#8C827A] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Search admission or name..."
+                    className="w-full pl-8 pr-8 py-1.5 text-xs font-mono border border-[#E9E4D9] rounded-sm bg-[#FAF8F3] text-[#2C2825] focus:outline-none focus:border-[#3F4E40]"
+                  />
+                  {searchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setSearchQuery("")}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#8C827A] hover:text-[#2C2825]"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  )}
+                </div>
+
+                {/* Department Filter Dropdown */}
+                {availableDepartments.length > 0 && (
+                  <div className="flex items-center gap-1.5 text-xs font-mono">
+                    <span className="text-[#6B645D]">Dept:</span>
+                    <select
+                      value={selectedDepartmentFilter}
+                      onChange={(e) => setSelectedDepartmentFilter(e.target.value)}
+                      className="py-1.5 px-2 text-xs font-mono border border-[#E9E4D9] rounded-sm bg-[#FAF8F3] text-[#2C2825] focus:outline-none focus:border-[#3F4E40]"
+                    >
+                      <option value="ALL">All Assigned Students</option>
+                      {availableDepartments.map((d) => (
+                        <option key={d.id} value={d.id}>
+                          {d.name}
+                        </option>
+                      ))}
+                      <option value="NONE">No Department</option>
+                    </select>
+                  </div>
                 )}
               </div>
 
@@ -1379,6 +1443,7 @@ export default function ScoreEntryClient({
                     <th className="py-3 px-4 font-medium w-12 text-center">#</th>
                     <th className="py-3 px-4 font-medium">Admission No.</th>
                     <th className="py-3 px-4 font-medium">Student Name</th>
+                    <th className="py-3 px-4 font-medium text-center">Dept</th>
                     {scheme.parts.map((p) => (
                       <th key={p.name} className="py-3 px-4 font-medium text-center w-28">
                         {p.name} <span className="text-[10px] text-[#8C827A]">(Max {p.max})</span>
@@ -1393,7 +1458,7 @@ export default function ScoreEntryClient({
                   {filteredScoreRows.length === 0 ? (
                     <tr>
                       <td
-                        colSpan={scheme.parts.length + (!isLocked && reviewStep === "edit" ? 6 : 5)}
+                        colSpan={scheme.parts.length + (!isLocked && reviewStep === "edit" ? 7 : 6)}
                         className="py-8 text-center text-xs text-[#6B645D]"
                       >
                         {searchQuery
@@ -1433,6 +1498,18 @@ export default function ScoreEntryClient({
                           </td>
                           <td className="py-2.5 px-4 font-medium text-[#2C2825]">
                             {row.full_name}
+                          </td>
+                          <td className="py-2.5 px-4 text-center font-mono text-xs">
+                            {(() => {
+                              const st = studentMap.get(row.student_id);
+                              return st?.department?.name ? (
+                                <span className="px-1.5 py-0.5 rounded text-[10px] bg-[#FAF3E0] text-[#7A5B15] border border-[#ECD9B0]">
+                                  {st.department.name}
+                                </span>
+                              ) : (
+                                <span className="text-[#8C827A] text-[11px]">—</span>
+                              );
+                            })()}
                           </td>
 
                           {/* Editable or Readonly Part Inputs */}

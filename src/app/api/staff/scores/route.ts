@@ -37,7 +37,11 @@ export async function GET(request: NextRequest) {
             id: true,
             admission_number: true,
             full_name: true,
+            department_id: true,
             status: true,
+            department: {
+              select: { id: true, name: true },
+            },
           },
           orderBy: { admission_number: "asc" },
         },
@@ -68,9 +72,19 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Term not found." }, { status: 404 });
     }
 
-    // 4. Role Authorization: Teacher check
+    // 4. Role Authorization: Teacher check & fetch teacher assignments
+    let teacherAssignments: { id: string; department_id: string | null }[] = [];
     if (session.role === "teacher") {
       await verifyTeacherAssignment(session.id, session.school_id, classId, subjectId);
+      teacherAssignments = await prisma.teacherAssignment.findMany({
+        where: {
+          school_id: session.school_id,
+          teacher_id: session.id,
+          class_id: classId,
+          subject_id: subjectId,
+        },
+        select: { id: true, department_id: true },
+      });
     } else if (session.role !== "school_admin" && session.role !== "platform_admin") {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
@@ -81,7 +95,6 @@ export async function GET(request: NextRequest) {
       orderBy: { created_at: "desc" },
     });
 
-    // Try class-specific scheme first, else school-wide default, else fallback
     const matchedScheme =
       schemes.find((s) => s.class_level && classObj.name.includes(s.class_level)) ||
       schemes.find((s) => !s.class_level) ||
@@ -96,8 +109,44 @@ export async function GET(request: NextRequest) {
         }
       : DEFAULT_FALLBACK_SCHEME;
 
-    // 6. Existing Results for this class, subject, and term
-    const studentIds = classObj.students.map((s) => s.id);
+    // 6. Filter students based on teacher assignment & department offers
+    // Fetch departments offering this subject in this school
+    const deptSubjects = await prisma.departmentSubject.findMany({
+      where: {
+        school_id: session.school_id,
+        subject_id: subjectId,
+      },
+      select: { department_id: true },
+    });
+    const offeringDeptIds = new Set(deptSubjects.map((ds) => ds.department_id));
+
+    const isTeacher = session.role === "teacher";
+    const hasAllDepts = !isTeacher || teacherAssignments.some((a) => a.department_id === null);
+    const assignedDeptIds = new Set(teacherAssignments.map((a) => a.department_id).filter(Boolean) as string[]);
+
+    const filteredStudents = classObj.students.filter((student) => {
+      // If student has no department, they always appear
+      if (!student.department_id) {
+        return true;
+      }
+
+      // If student has a department, it MUST offer the subject
+      if (!offeringDeptIds.has(student.department_id)) {
+        return false;
+      }
+
+      // If viewing user is a teacher, assignment must cover student's department or all departments
+      if (isTeacher) {
+        if (!hasAllDepts && !assignedDeptIds.has(student.department_id)) {
+          return false;
+        }
+      }
+
+      return true;
+    });
+
+    // 7. Existing Results for filtered students
+    const studentIds = filteredStudents.map((s) => s.id);
     const existingResults = await prisma.result.findMany({
       where: {
         school_id: session.school_id,
@@ -146,7 +195,7 @@ export async function GET(request: NextRequest) {
         is_open: termObj.status === "DRAFT",
       },
       scheme: gradingScheme,
-      students: classObj.students,
+      students: filteredStudents,
       results: formattedResults,
       isLocked,
       userRole: session.role,

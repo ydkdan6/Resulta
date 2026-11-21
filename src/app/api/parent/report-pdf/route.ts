@@ -16,6 +16,7 @@ import {
 /**
  * GET /api/parent/report-pdf?termId=
  * Generates an official report card PDF for a student and term.
+ * If the student has a department, only subjects offered by that department are included.
  */
 export async function GET(request: NextRequest) {
   try {
@@ -69,7 +70,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Result not released. Please contact the school.' }, { status: 403 });
     }
 
-    // Fetch school, student, and results
+    // Fetch school, student (with department & offered subjects), and results
     const [school, student, results] = await Promise.all([
       prisma.school.findUnique({
         where: { id: school_id },
@@ -80,7 +81,16 @@ export async function GET(request: NextRequest) {
         select: {
           admission_number: true,
           full_name: true,
+          department_id: true,
           class: { select: { name: true } },
+          department: {
+            select: {
+              name: true,
+              departmentSubjects: {
+                select: { subject_id: true },
+              },
+            },
+          },
         },
       }),
       prisma.result.findMany({
@@ -91,7 +101,7 @@ export async function GET(request: NextRequest) {
           status: 'SUBMITTED',
         },
         include: {
-          subject: { select: { name: true } },
+          subject: { select: { id: true, name: true } },
         },
         orderBy: { subject: { name: 'asc' } },
       }),
@@ -101,8 +111,18 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Record not found.' }, { status: 404 });
     }
 
-    // Check cache for pre-rendered PDF buffer
-    const cachedPdf = getCachedReportCard<Buffer>(school_id, student_id, `${termId}:pdf`);
+    // Filter results by department if student has a department
+    let filteredResults = results;
+    if (student.department_id && student.department) {
+      const offeredSubjectIds = new Set(
+        student.department.departmentSubjects.map((ds) => ds.subject_id)
+      );
+      filteredResults = results.filter((r) => offeredSubjectIds.has(r.subject.id));
+    }
+
+    // Cache key for pre-rendered PDF buffer
+    const pdfCacheKey = `${termId}:${student.department_id || 'nodept'}:pdf`;
+    const cachedPdf = getCachedReportCard<Buffer>(school_id, student_id, pdfCacheKey);
     if (cachedPdf) {
       return new NextResponse(new Uint8Array(cachedPdf), {
         status: 200,
@@ -168,35 +188,47 @@ export async function GET(request: NextRequest) {
       doc.fillColor('#2C2825')
         .font('Helvetica-Bold')
         .fontSize(10)
-        .text(student.class?.name || 'General', 400, 124);
+        .text(student.class?.name || '-', 410, 124);
 
-      // Results Table Header
+      if (student.department?.name) {
+        doc.fillColor('#6B645D')
+          .font('Helvetica')
+          .fontSize(8)
+          .text('DEPARTMENT:', 350, 145);
+        doc.fillColor('#2C2825')
+          .font('Helvetica-Bold')
+          .fontSize(10)
+          .text(student.department.name, 430, 144);
+      }
+
+      // Scores Table Header
       let y = 185;
-      doc.rect(40, y, 515, 24).fillColor('#E9E4D9').fill();
-      doc.fillColor('#2C2825').font('Helvetica-Bold').fontSize(8);
-      doc.text('SUBJECT', 50, y + 8, { width: 180 });
-      doc.text('CA (40)', 240, y + 8, { width: 50, align: 'center' });
-      doc.text('EXAM (60)', 300, y + 8, { width: 60, align: 'center' });
-      doc.text('TOTAL', 370, y + 8, { width: 50, align: 'center' });
-      doc.text('GRADE', 430, y + 8, { width: 40, align: 'center' });
+      doc.rect(40, y, 515, 24).fillColor('#EDE8DF').fill();
+      doc.fillColor('#3F4E40').font('Helvetica-Bold').fontSize(8);
+      doc.text('SUBJECT', 50, y + 8, { width: 170 });
+      doc.text('CA (40%)', 220, y + 8, { width: 50, align: 'center' });
+      doc.text('EXAM (60%)', 280, y + 8, { width: 60, align: 'center' });
+      doc.text('TOTAL', 350, y + 8, { width: 45, align: 'center' });
+      doc.text('GRADE', 410, y + 8, { width: 45, align: 'center' });
       doc.text('REMARK', 480, y + 8, { width: 70, align: 'left' });
 
+      // Table Rows
       y += 24;
       let totalMarks = 0;
       let scoredSubjects = 0;
 
-      results.forEach((r, idx) => {
+      filteredResults.forEach((r, idx) => {
         const bg = idx % 2 === 0 ? '#FFFFFF' : '#FAF8F3';
         doc.rect(40, y, 515, 20).fillColor(bg).fill();
-        doc.fillColor('#2C2825').font('Helvetica').fontSize(8);
 
-        doc.text(r.subject.name, 50, y + 6, { width: 180, ellipsis: true });
-        doc.text(r.ca_score?.toString() || '-', 240, y + 6, { width: 50, align: 'center' });
-        doc.text(r.exam_score?.toString() || '-', 300, y + 6, { width: 60, align: 'center' });
+        doc.fillColor('#2C2825').font('Helvetica').fontSize(8);
+        doc.text(r.subject.name, 50, y + 6, { width: 165, ellipsis: true });
+        doc.text(r.ca_score !== null ? String(r.ca_score) : '-', 220, y + 6, { width: 50, align: 'center' });
+        doc.text(r.exam_score !== null ? String(r.exam_score) : '-', 280, y + 6, { width: 60, align: 'center' });
 
         doc.font('Helvetica-Bold');
-        doc.text(r.total?.toString() || '-', 370, y + 6, { width: 50, align: 'center' });
-        doc.text(r.grade || '-', 430, y + 6, { width: 40, align: 'center' });
+        doc.text(r.total !== null ? String(r.total) : '-', 350, y + 6, { width: 45, align: 'center' });
+        doc.text(r.grade || '-', 410, y + 6, { width: 45, align: 'center' });
 
         doc.font('Helvetica');
         doc.text(r.remark || '-', 480, y + 6, { width: 70, align: 'left', ellipsis: true });
@@ -235,7 +267,7 @@ export async function GET(request: NextRequest) {
     });
 
     // Cache the rendered PDF buffer
-    setCachedReportCard(school_id, student_id, `${termId}:pdf`, pdfBuffer);
+    setCachedReportCard(school_id, student_id, pdfCacheKey, pdfBuffer);
 
     return new NextResponse(new Uint8Array(pdfBuffer), {
       status: 200,

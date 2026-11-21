@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireAuth, verifyTeacherAssignment, AuthError } from "@/lib/auth/scope";
+import { requireAuth, verifyTeacherAssignment, verifyTeacherStudentScoreAccess, AuthError } from "@/lib/auth/scope";
 import { validateScores, DEFAULT_FALLBACK_SCHEME } from "@/lib/scores/validateScores";
 import { SaveScoresSchema } from "@/lib/validation/schemas";
 import { validateInput } from "@/lib/validation/validate";
@@ -34,6 +34,7 @@ export async function POST(request: NextRequest) {
             id: true,
             admission_number: true,
             full_name: true,
+            department_id: true,
             status: true,
           },
         },
@@ -71,7 +72,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    // 5. Lock Check: A submitted score cannot be edited by the teacher
+    // 5. Lock Check: A submitted score cannot be edited
     const studentIds = classObj.students.map((s) => s.id);
     const existingSubmitted = await prisma.result.findFirst({
       where: {
@@ -112,7 +113,7 @@ export async function POST(request: NextRequest) {
         }
       : DEFAULT_FALLBACK_SCHEME;
 
-    // 7. Validate Scores (Draft mode: partial scores allowed, but no invalid/over-max/duplicate/unknown)
+    // 7. Validate Scores (Draft mode)
     const scoreValidation = validateScores({
       rows,
       scheme: gradingScheme,
@@ -127,9 +128,22 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 8. Atomic database transaction to save draft results
+    // 8. Teacher student score write checks (enforce department offering & teacher scope)
     const rowsToSave = scoreValidation.validatedRows.filter((r: any) => r.hasAnyScore);
 
+    if (session.role === "teacher") {
+      for (const row of rowsToSave) {
+        await verifyTeacherStudentScoreAccess(
+          session.id,
+          session.school_id,
+          classId,
+          subjectId,
+          row.student_id
+        );
+      }
+    }
+
+    // 9. Atomic database transaction to save draft results
     if (rowsToSave.length > 0) {
       await prisma.$transaction(
         rowsToSave.map((row: any) =>
@@ -168,14 +182,14 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      count: rowsToSave.length,
-      message: `Saved ${rowsToSave.length} student scores as draft successfully.`,
+      savedCount: rowsToSave.length,
+      message: "Scores saved as draft.",
     });
   } catch (error) {
     if (error instanceof AuthError) {
       return NextResponse.json({ error: error.message }, { status: error.statusCode });
     }
     logger.error("[api/staff/scores/save] Error:", error);
-    return NextResponse.json({ error: "Failed to save draft scores." }, { status: 500 });
+    return NextResponse.json({ error: "Failed to save scores." }, { status: 500 });
   }
 }

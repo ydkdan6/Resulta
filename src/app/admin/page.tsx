@@ -16,70 +16,72 @@ export default async function PlatformAdminDashboardPage() {
     redirect('/admin/login');
   }
 
-  // Fetch all schools with their classes, subjects, teachers, and payment batches
-  const [schoolsRaw, teachers, batchesRaw] = await Promise.all([
-    prisma.school.findMany({
-      orderBy: { created_at: 'desc' },
-      include: {
-        classes: {
-          select: { id: true, name: true },
-          orderBy: { name: 'asc' },
-        },
-        subjects: {
-          select: { id: true, name: true, code: true },
-          orderBy: { name: 'asc' },
-        },
-        users: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-            role: true,
-            must_change_password: true,
-          },
-        },
-        _count: {
-          select: {
-            classes: true,
-            subjects: true,
-            students: true,
-          },
+  // Fetch all schools with their classes, subjects, teachers, and payment batches sequentially
+  // to avoid exhausting connections when pool size is limited (connection limit: 1).
+  const schoolsRaw = await prisma.school.findMany({
+    orderBy: { created_at: 'desc' },
+    include: {
+      classes: {
+        select: { id: true, name: true },
+        orderBy: { name: 'asc' },
+      },
+      subjects: {
+        select: { id: true, name: true, code: true },
+        orderBy: { name: 'asc' },
+      },
+      users: {
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          role: true,
+          must_change_password: true,
         },
       },
-    }),
-    prisma.user.findMany({
-      where: { role: 'teacher' },
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        school_id: true,
-        school: { select: { id: true, name: true, slug: true } },
-        must_change_password: true,
-        teacherAssignments: {
-          include: {
-            class: { select: { id: true, name: true } },
-            subject: { select: { id: true, name: true, code: true } },
-          },
+      _count: {
+        select: {
+          classes: true,
+          subjects: true,
+          students: true,
         },
       },
-      orderBy: { name: 'asc' },
-    }),
-    prisma.paymentBatch.findMany({
-      orderBy: { created_at: 'desc' },
-      include: {
-        school: {
-          select: { id: true, name: true, slug: true, platform_share: true },
-        },
-        term: {
-          select: { id: true, session: true, term_number: true },
-        },
-        confirmer: {
-          select: { id: true, name: true, email: true },
+    },
+  });
+
+  const teachers = await prisma.user.findMany({
+    where: { role: 'teacher' },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      school_id: true,
+      school: { select: { id: true, name: true, slug: true } },
+      must_change_password: true,
+      teacherAssignments: {
+        include: {
+          class: { select: { id: true, name: true } },
+          subject: { select: { id: true, name: true, code: true } },
+          department: { select: { id: true, name: true } },
         },
       },
-    }),
-  ]);
+    },
+    orderBy: { name: 'asc' },
+  });
+
+  const batchesRaw = await prisma.paymentBatch.findMany({
+    orderBy: { created_at: 'desc' },
+    include: {
+      school: {
+        select: { id: true, name: true, slug: true, platform_share: true },
+      },
+      term: {
+        select: { id: true, session: true, term_number: true },
+      },
+      confirmer: {
+        select: { id: true, name: true, email: true },
+      },
+    },
+  });
 
   const schools = schoolsRaw.map((s) => ({
     ...s,
