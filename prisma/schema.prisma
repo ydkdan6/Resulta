@@ -86,6 +86,8 @@ model School {
   auditLogs           AuditLog[]
   complaints          Complaint[]
   shareLedgerEntries  ShareLedgerEntry[]
+  departments         Department[]
+  departmentSubjects  DepartmentSubject[]
 
   @@index([slug])
 }
@@ -140,30 +142,34 @@ model Subject {
   school             School              @relation(fields: [school_id], references: [id], onDelete: Cascade)
   teacherAssignments TeacherAssignment[]
   results            Result[]
+  departmentSubjects DepartmentSubject[]
 
   @@unique([school_id, name])
   @@index([school_id])
 }
 
 model TeacherAssignment {
-  id         String   @id @default(uuid())
-  school_id  String
-  teacher_id String
-  class_id   String
-  subject_id String
-  created_at DateTime @default(now())
-  updated_at DateTime @updatedAt
+  id            String      @id @default(uuid())
+  school_id     String
+  teacher_id    String
+  class_id      String
+  subject_id    String
+  department_id String?
+  created_at    DateTime    @default(now())
+  updated_at    DateTime    @updatedAt
 
-  school  School  @relation(fields: [school_id], references: [id], onDelete: Cascade)
-  teacher User    @relation(fields: [teacher_id], references: [id], onDelete: Cascade)
-  class   Class   @relation(fields: [class_id], references: [id], onDelete: Cascade)
-  subject Subject @relation(fields: [subject_id], references: [id], onDelete: Cascade)
+  school     School      @relation(fields: [school_id], references: [id], onDelete: Cascade)
+  teacher    User        @relation(fields: [teacher_id], references: [id], onDelete: Cascade)
+  class      Class       @relation(fields: [class_id], references: [id], onDelete: Cascade)
+  subject    Subject     @relation(fields: [subject_id], references: [id], onDelete: Cascade)
+  department Department? @relation(fields: [department_id], references: [id], onDelete: Restrict)
 
-  @@unique([school_id, teacher_id, class_id, subject_id])
+  @@unique([school_id, teacher_id, class_id, subject_id, department_id])
   @@index([school_id])
   @@index([teacher_id])
   @@index([class_id])
   @@index([subject_id])
+  @@index([department_id])
 }
 
 model Student {
@@ -172,6 +178,7 @@ model Student {
   admission_number String
   full_name        String
   class_id         String
+  department_id    String?
   status                 StudentStatus @default(ACTIVE)
   not_in_latest_upload   Boolean       @default(false)
   created_at             DateTime      @default(now())
@@ -179,6 +186,7 @@ model Student {
 
   school       School              @relation(fields: [school_id], references: [id], onDelete: Cascade)
   class        Class               @relation(fields: [class_id], references: [id], onDelete: Restrict)
+  department   Department?         @relation(fields: [department_id], references: [id], onDelete: Restrict)
   results      Result[]
   termStatuses StudentTermStatus[]
   pins         Pin[]
@@ -188,6 +196,7 @@ model Student {
   @@unique([school_id, admission_number])
   @@index([school_id])
   @@index([class_id])
+  @@index([department_id])
   @@index([admission_number])
   @@index([school_id, class_id])
   @@index([school_id, status])
@@ -437,3 +446,38 @@ model WaitlistEntry {
   @@index([created_at])
 }
 
+
+model Department {
+  id          String   @id @default(uuid())
+  school_id   String
+  name        String
+  is_archived Boolean  @default(false)
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  school             School              @relation(fields: [school_id], references: [id], onDelete: Restrict)
+  departmentSubjects DepartmentSubject[]
+  students           Student[]
+  teacherAssignments TeacherAssignment[]
+
+  @@unique([school_id, name])
+  @@index([school_id])
+}
+
+model DepartmentSubject {
+  id            String   @id @default(uuid())
+  department_id String
+  subject_id    String
+  school_id     String
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
+
+  department Department @relation(fields: [department_id], references: [id], onDelete: Cascade)
+  subject    Subject    @relation(fields: [subject_id], references: [id], onDelete: Cascade)
+  school     School     @relation(fields: [school_id], references: [id], onDelete: Restrict)
+
+  @@unique([department_id, subject_id])
+  @@index([school_id])
+  @@index([department_id])
+  @@index([subject_id])
+}

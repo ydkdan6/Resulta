@@ -40,28 +40,36 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Subject not found in this school.' }, { status: 404 });
     }
 
-    // Upsert assignment to prevent duplicate errors
-    const assignment = await prisma.teacherAssignment.upsert({
+    // Server-side check: enforce one all-departments assignment or specific department
+    let assignment = await prisma.teacherAssignment.findFirst({
       where: {
-        school_id_teacher_id_class_id_subject_id: {
-          school_id,
-          teacher_id,
-          class_id,
-          subject_id,
-        },
-      },
-      update: {},
-      create: {
         school_id,
         teacher_id,
         class_id,
         subject_id,
+        department_id: null,
       },
       include: {
         class: { select: { id: true, name: true } },
         subject: { select: { id: true, name: true, code: true } },
       },
     });
+
+    if (!assignment) {
+      assignment = await prisma.teacherAssignment.create({
+        data: {
+          school_id,
+          teacher_id,
+          class_id,
+          subject_id,
+          department_id: null,
+        },
+        include: {
+          class: { select: { id: true, name: true } },
+          subject: { select: { id: true, name: true, code: true } },
+        },
+      });
+    }
 
     return NextResponse.json({ assignment }, { status: 201 });
   } catch (error) {
