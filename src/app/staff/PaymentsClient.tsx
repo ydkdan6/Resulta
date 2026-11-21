@@ -78,10 +78,9 @@ export default function PaymentsClient({ schoolName, schoolLogo }: Props) {
   const [loadingTerms, setLoadingTerms] = useState(true);
 
   const [students, setStudents] = useState<StudentPaymentRow[]>([]);
-  const [batches, setBatches] = useState<PaymentBatchItem[]>([]);
   const [complaints, setComplaints] = useState<ComplaintItem[]>([]);
-  const [platformShare, setPlatformShare] = useState<number>(1000);
-  const [cardPrice, setCardPrice] = useState<number>(2000);
+  const [platformShare, setPlatformShare] = useState<number | null>(null);
+  const [cardPrice, setCardPrice] = useState<number | null>(null);
 
   const [loadingData, setLoadingData] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
@@ -144,20 +143,24 @@ export default function PaymentsClient({ schoolName, schoolLogo }: Props) {
       ]);
 
       if (!payRes.ok) {
-        const err = await payRes.json();
+        const err = await payRes.json().catch(() => ({}));
         throw new Error(err.error || "Failed to load payment tracking data.");
       }
       const payData = await payRes.json();
+      if (payData.platform_share == null || payData.card_price == null) {
+        throw new Error("Missing school pricing configuration (card price or platform share) from server.");
+      }
       setStudents(payData.students || []);
-      setBatches(payData.batches || []);
-      setPlatformShare(payData.platform_share || 1000);
-      setCardPrice(payData.card_price || 2000);
+      setPlatformShare(Number(payData.platform_share));
+      setCardPrice(Number(payData.card_price));
       setSelectedStudentIds(new Set());
 
-      if (compRes.ok) {
-        const compData = await compRes.json();
-        setComplaints(compData.complaints || []);
+      if (!compRes.ok) {
+        const compErr = await compRes.json().catch(() => ({}));
+        throw new Error(compErr.error || "Failed to load parent complaints for this term.");
       }
+      const compData = await compRes.json();
+      setComplaints(compData.complaints || []);
     } catch (err: unknown) {
       setErrorMsg((err as Error).message);
     } finally {
@@ -170,7 +173,7 @@ export default function PaymentsClient({ schoolName, schoolLogo }: Props) {
   }, [loadPaymentData]);
 
   // Handle Mark as Paid (bulk or single)
-  const handleMarkPaid = async (studentIds: string[], createBatch: boolean) => {
+  const handleMarkPaid = async (studentIds: string[]) => {
     if (studentIds.length === 0 || !selectedTermId) return;
     try {
       setActionLoading(true);
@@ -183,18 +186,13 @@ export default function PaymentsClient({ schoolName, schoolLogo }: Props) {
         body: JSON.stringify({
           termId: selectedTermId,
           studentIds,
-          createBatch,
         }),
       });
 
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to update payment status.");
 
-      setSuccessMsg(
-        createBatch
-          ? `Marked ${data.updated_count} student(s) as paid and created a payment batch.`
-          : `Marked ${data.updated_count} student(s) as paid.`
-      );
+      setSuccessMsg(`Marked ${data.updated_count} student(s) as paid.`);
       await loadPaymentData();
     } catch (err: unknown) {
       setErrorMsg((err as Error).message);
@@ -410,10 +408,11 @@ export default function PaymentsClient({ schoolName, schoolLogo }: Props) {
     }
   };
 
+  const share = platformShare ?? 1000;
+  const price = cardPrice ?? 2000;
   const paidCount = students.filter((s) => s.fees_paid).length;
-  const amountOwed = paidCount * platformShare;
-  const confirmedBatches = batches.filter((b) => b.status === "CONFIRMED");
-  const hasConfirmedBatch = confirmedBatches.length > 0;
+  const amountOwed = paidCount * share;
+  const schoolShare = paidCount * (price - share);
 
   return (
     <div className="space-y-6">
@@ -437,7 +436,7 @@ export default function PaymentsClient({ schoolName, schoolLogo }: Props) {
         <div>
           <h2 className="text-xl font-serif text-[#2C2825]">Payment Tracking & PIN Engine</h2>
           <p className="text-xs font-mono text-[#6B645D] mt-1">
-            Mark student fees as paid, manage billing batches, generate print-ready PIN cards, and reprint replacements.
+            Mark student fees as paid, track school revenue shares, generate PIN cards, and reprint replacements.
           </p>
         </div>
 
@@ -459,7 +458,7 @@ export default function PaymentsClient({ schoolName, schoolLogo }: Props) {
             type="button"
             onClick={loadPaymentData}
             disabled={loadingData || actionLoading}
-            className="p-1.5 border border-[#D1CCC2] bg-white text-[#6B645D] hover:text-[#2C2825] rounded-sm text-xs"
+            className="p-1.5 border border-[#D1CCC2] bg-white text-[#6B645D] hover:text-[#2C2825] rounded-sm text-xs cursor-pointer"
             title="Refresh"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${loadingData ? "animate-spin" : ""}`} />
@@ -476,7 +475,7 @@ export default function PaymentsClient({ schoolName, schoolLogo }: Props) {
         </div>
 
         <div className="p-4 bg-white border border-[#E9E4D9] rounded-sm">
-          <div className="text-xs font-mono text-[#6B645D]">Marked as Paid</div>
+          <div className="text-xs font-mono text-[#6B645D]">Students Paid</div>
           <div className="text-2xl font-serif text-[#3F4E40] mt-1">{paidCount}</div>
           <div className="text-[11px] font-mono text-[#6B645D] mt-1">
             {students.length > 0 ? Math.round((paidCount / students.length) * 100) : 0}% clearance
@@ -484,32 +483,22 @@ export default function PaymentsClient({ schoolName, schoolLogo }: Props) {
         </div>
 
         <div className="p-4 bg-white border border-[#E9E4D9] rounded-sm">
-          <div className="text-xs font-mono text-[#6B645D]">Amount Owed to Provider</div>
-          <div className="text-2xl font-serif text-[#2C2825] mt-1">
-            ₦{amountOwed.toLocaleString()}
+          <div className="text-xs font-mono text-[#6B645D]">School Share Earned</div>
+          <div className="text-2xl font-serif text-[#2B4C7E] mt-1">
+            ₦{schoolShare.toLocaleString()}
           </div>
           <div className="text-[11px] font-mono text-[#6B645D] mt-1">
-            {paidCount} paid × ₦{platformShare.toLocaleString()} share
+            {paidCount} paid × ₦{(price - share).toLocaleString()} per student
           </div>
         </div>
 
         <div className="p-4 bg-white border border-[#E9E4D9] rounded-sm">
-          <div className="text-xs font-mono text-[#6B645D]">PIN Generation Status</div>
-          <div className="mt-1 flex items-center gap-1.5">
-            {hasConfirmedBatch ? (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-mono font-medium bg-[#F2F6F3] text-[#3F4E40] rounded-sm border border-[#BACBBF]">
-                <CheckCircle2 className="w-3 h-3" /> Batch Confirmed
-              </span>
-            ) : (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-mono font-medium bg-[#FFF8E7] text-[#91660A] rounded-sm border border-[#F0D59A]">
-                <Clock className="w-3 h-3" /> Awaiting Confirmation
-              </span>
-            )}
+          <div className="text-xs font-mono text-[#6B645D]">Amount Owed to Platform</div>
+          <div className="text-2xl font-serif text-[#671B24] mt-1">
+            ₦{amountOwed.toLocaleString()}
           </div>
           <div className="text-[11px] font-mono text-[#6B645D] mt-1">
-            {hasConfirmedBatch
-              ? "Platform approved PIN generation"
-              : "PINs locked until batch confirmed"}
+            {paidCount} paid × ₦{share.toLocaleString()} platform share
           </div>
         </div>
       </div>
@@ -714,44 +703,17 @@ export default function PaymentsClient({ schoolName, schoolLogo }: Props) {
             <button
               type="button"
               disabled={selectedStudentIds.size === 0 || actionLoading}
-              onClick={() => handleMarkPaid(Array.from(selectedStudentIds), false)}
-              className="px-3 py-1.5 bg-[#FAF8F3] hover:bg-[#F0ECE1] text-[#2C2825] border border-[#D1CCC2] text-xs font-mono rounded-sm disabled:opacity-40"
+              onClick={() => handleMarkPaid(Array.from(selectedStudentIds))}
+              className="px-3 py-1.5 bg-[#3F4E40] hover:bg-[#344035] text-white text-xs font-mono rounded-sm font-medium disabled:opacity-40 cursor-pointer"
             >
               Mark Selected Paid ({selectedStudentIds.size})
             </button>
 
             <button
               type="button"
-              disabled={
-                selectedStudentIds.size === 0 ||
-                actionLoading ||
-                Array.from(selectedStudentIds).some(
-                  (id) => students.find((s) => s.id === id)?.fees_paid
-                )
-              }
-              onClick={() => handleMarkPaid(Array.from(selectedStudentIds), true)}
-              title={
-                Array.from(selectedStudentIds).some(
-                  (id) => students.find((s) => s.id === id)?.fees_paid
-                )
-                  ? "Selected list contains student(s) already marked as paid. Deselect paid students to create a new batch."
-                  : "Mark selected unpaid students as paid and create a new payment batch"
-              }
-              className="px-3 py-1.5 bg-[#3F4E40] hover:bg-[#344035] text-white text-xs font-mono rounded-sm disabled:opacity-40 font-medium"
-            >
-              Mark Paid + Create Batch ({selectedStudentIds.size})
-            </button>
-
-            <button
-              type="button"
-              disabled={selectedStudentIds.size === 0 || actionLoading || !hasConfirmedBatch}
+              disabled={selectedStudentIds.size === 0 || actionLoading}
               onClick={() => handleGeneratePins(Array.from(selectedStudentIds))}
-              title={
-                !hasConfirmedBatch
-                  ? "PIN generation is locked until the provider confirms a payment batch."
-                  : "Generate PINs for selected paid students"
-              }
-              className="px-3 py-1.5 bg-[#671B24] hover:bg-[#52151D] text-white text-xs font-mono rounded-sm disabled:opacity-40 font-medium flex items-center gap-1.5"
+              className="px-3 py-1.5 bg-[#671B24] hover:bg-[#52151D] text-white text-xs font-mono rounded-sm disabled:opacity-40 font-medium flex items-center gap-1.5 cursor-pointer"
             >
               <KeyRound className="w-3.5 h-3.5" /> Generate Selected PINs
             </button>
@@ -830,8 +792,8 @@ export default function PaymentsClient({ schoolName, schoolLogo }: Props) {
                         <button
                           type="button"
                           disabled={actionLoading}
-                          onClick={() => handleMarkPaid([s.id], false)}
-                          className="px-2 py-1 bg-white border border-[#D1CCC2] hover:bg-[#FAF8F3] text-[11px] rounded-sm text-[#3F4E40]"
+                          onClick={() => handleMarkPaid([s.id])}
+                          className="px-2 py-1 bg-white border border-[#D1CCC2] hover:bg-[#FAF8F3] text-[11px] rounded-sm text-[#3F4E40] cursor-pointer"
                         >
                           Mark Paid
                         </button>
@@ -899,161 +861,82 @@ export default function PaymentsClient({ schoolName, schoolLogo }: Props) {
         )}
       </div>
 
-      {/* Bottom Grid: Payment Batches & Complaints Queue */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Payment Batches Section */}
-        <div className="bg-white border border-[#E9E4D9] rounded-sm p-5 space-y-4">
-          <div className="border-b border-[#E9E4D9] pb-3">
-            <h3 className="text-base font-serif text-[#2C2825]">Payment Batches</h3>
-            <p className="text-xs font-mono text-[#6B645D] mt-0.5">
-              Batches submitted to the platform provider. Click 'Generate Cards' once confirmed to produce PIN cards.
-            </p>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs font-mono">
-              <thead className="bg-[#FAF8F3] border-b border-[#E9E4D9] text-[#6B645D]">
-                <tr>
-                  <th className="py-2 px-3">Date</th>
-                  <th className="py-2 px-3">Students</th>
-                  <th className="py-2 px-3">Amount Due</th>
-                  <th className="py-2 px-3">Status</th>
-                  <th className="py-2 px-3 text-right">Action</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[#E9E4D9]">
-                {batches.length === 0 ? (
-                  <tr>
-                    <td colSpan={5} className="py-6 text-center text-[#6B645D]">
-                      No payment batches created yet for this term.
-                    </td>
-                  </tr>
-                ) : (
-                  batches.map((b) => (
-                    <tr key={b.id}>
-                      <td className="py-2 px-3 text-[#6B645D]">
-                        {new Date(b.created_at).toLocaleDateString()}
-                      </td>
-                      <td className="py-2 px-3 font-semibold text-[#2C2825]">
-                        {b.students_count}
-                      </td>
-                      <td className="py-2 px-3 text-[#2C2825]">
-                        ₦{Number(b.amount_due).toLocaleString()}
-                      </td>
-                      <td className="py-2 px-3">
-                        {b.status === "CONFIRMED" ? (
-                          <span className="inline-flex items-center gap-1 text-[#3F4E40] font-medium">
-                            <CheckCircle2 className="w-3.5 h-3.5" /> Confirmed
-                          </span>
-                        ) : b.status === "REJECTED" ? (
-                          <span className="inline-flex items-center gap-1 text-[#671B24] font-medium">
-                            <AlertCircle className="w-3.5 h-3.5" /> Rejected
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 text-[#91660A] font-medium">
-                            <Clock className="w-3.5 h-3.5" /> Pending
-                          </span>
-                        )}
-                      </td>
-                      <td className="py-2 px-3 text-right">
-                        {b.status === "CONFIRMED" ? (
-                          <button
-                            type="button"
-                            disabled={actionLoading}
-                            onClick={() => handleGeneratePins(undefined, b.id)}
-                            className="px-2.5 py-1 bg-[#3F4E40] hover:bg-[#344035] text-white text-[11px] font-mono rounded-sm font-medium"
-                          >
-                            Generate Cards
-                          </button>
-                        ) : (
-                          <span className="text-[11px] text-[#6B645D]">Locked</span>
-                        )}
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
+      {/* Parent Complaints Queue */}
+      <div className="bg-white border border-[#E9E4D9] rounded-sm p-5 space-y-4">
+        <div className="border-b border-[#E9E4D9] pb-3">
+          <h3 className="text-base font-serif text-[#2C2825]">Parent Complaints Queue</h3>
+          <p className="text-xs font-mono text-[#6B645D] mt-0.5">
+            Parents reporting 'I have paid' from the result portal.
+          </p>
         </div>
 
-        {/* Complaints Queue Section */}
-        <div className="bg-white border border-[#E9E4D9] rounded-sm p-5 space-y-4">
-          <div className="border-b border-[#E9E4D9] pb-3">
-            <h3 className="text-base font-serif text-[#2C2825]">Parent Complaints Queue</h3>
-            <p className="text-xs font-mono text-[#6B645D] mt-0.5">
-              Parents reporting 'I have paid' from the result portal.
-            </p>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs font-mono">
-              <thead className="bg-[#FAF8F3] border-b border-[#E9E4D9] text-[#6B645D]">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs font-mono">
+            <thead className="bg-[#FAF8F3] border-b border-[#E9E4D9] text-[#6B645D]">
+              <tr>
+                <th className="py-2 px-3">Student</th>
+                <th className="py-2 px-3">Message</th>
+                <th className="py-2 px-3">Status</th>
+                <th className="py-2 px-3 text-right">Action</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[#E9E4D9]">
+              {complaints.length === 0 ? (
                 <tr>
-                  <th className="py-2 px-3">Student</th>
-                  <th className="py-2 px-3">Message</th>
-                  <th className="py-2 px-3">Status</th>
-                  <th className="py-2 px-3 text-right">Action</th>
+                  <td colSpan={4} className="py-6 text-center text-[#6B645D]">
+                    No complaints submitted for this term.
+                  </td>
                 </tr>
-              </thead>
-              <tbody className="divide-y divide-[#E9E4D9]">
-                {complaints.length === 0 ? (
-                  <tr>
-                    <td colSpan={4} className="py-6 text-center text-[#6B645D]">
-                      No complaints submitted for this term.
+              ) : (
+                complaints.map((c) => (
+                  <tr key={c.id}>
+                    <td className="py-2 px-3">
+                      <div className="font-semibold text-[#2C2825]">
+                        {c.student.admission_number}
+                      </div>
+                      <div className="text-[11px] text-[#6B645D]">{c.student.full_name}</div>
+                    </td>
+                    <td className="py-2 px-3 text-[#2C2825] max-w-xs truncate" title={c.message}>
+                      {c.message}
+                    </td>
+                    <td className="py-2 px-3">
+                      <span
+                        className={`text-[11px] px-1.5 py-0.5 rounded-sm ${
+                          c.status === "RESOLVED"
+                            ? "bg-[#F2F6F3] text-[#3F4E40]"
+                            : c.status === "DISMISSED"
+                            ? "bg-gray-100 text-gray-600"
+                            : "bg-[#FFF8E7] text-[#91660A]"
+                        }`}
+                      >
+                        {c.status}
+                      </span>
+                    </td>
+                    <td className="py-2 px-3 text-right space-x-1">
+                      {c.status === "PENDING" && (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => handleResolveComplaint(c.id, "RESOLVED")}
+                            className="px-2 py-0.5 bg-[#FAF8F3] border border-[#BACBBF] text-[#3F4E40] text-[10px] rounded-sm cursor-pointer"
+                          >
+                            Resolve
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleResolveComplaint(c.id, "DISMISSED")}
+                            className="px-2 py-0.5 bg-white border border-[#D1CCC2] text-gray-500 text-[10px] rounded-sm cursor-pointer"
+                          >
+                            Dismiss
+                          </button>
+                        </>
+                      )}
                     </td>
                   </tr>
-                ) : (
-                  complaints.map((c) => (
-                    <tr key={c.id}>
-                      <td className="py-2 px-3">
-                        <div className="font-semibold text-[#2C2825]">
-                          {c.student.admission_number}
-                        </div>
-                        <div className="text-[11px] text-[#6B645D]">{c.student.full_name}</div>
-                      </td>
-                      <td className="py-2 px-3 text-[#2C2825] max-w-xs truncate" title={c.message}>
-                        {c.message}
-                      </td>
-                      <td className="py-2 px-3">
-                        <span
-                          className={`text-[11px] px-1.5 py-0.5 rounded-sm ${
-                            c.status === "RESOLVED"
-                              ? "bg-[#F2F6F3] text-[#3F4E40]"
-                              : c.status === "DISMISSED"
-                              ? "bg-gray-100 text-gray-600"
-                              : "bg-[#FFF8E7] text-[#91660A]"
-                          }`}
-                        >
-                          {c.status}
-                        </span>
-                      </td>
-                      <td className="py-2 px-3 text-right space-x-1">
-                        {c.status === "PENDING" && (
-                          <>
-                            <button
-                              type="button"
-                              onClick={() => handleResolveComplaint(c.id, "RESOLVED")}
-                              className="px-2 py-0.5 bg-[#FAF8F3] border border-[#BACBBF] text-[#3F4E40] text-[10px] rounded-sm"
-                            >
-                              Resolve
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleResolveComplaint(c.id, "DISMISSED")}
-                              className="px-2 py-0.5 bg-white border border-[#D1CCC2] text-gray-500 text-[10px] rounded-sm"
-                            >
-                              Dismiss
-                            </button>
-                          </>
-                        )}
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
+                ))
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
     </div>

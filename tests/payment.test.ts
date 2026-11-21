@@ -132,7 +132,7 @@ describe("Payment Tracking & PIN Gating System", () => {
     }
   });
 
-  test("4. POST /api/staff/payments marks students as paid and creates batch", async () => {
+  test("4. POST /api/staff/payments marks students as paid and creates SHARE_DUE ledger entry", async () => {
     const origTerm = prisma.term.findUnique;
     const origStudents = prisma.student.findMany;
     const origSchool = prisma.school.findUnique;
@@ -146,11 +146,15 @@ describe("Payment Tracking & PIN Gating System", () => {
     (prisma.school.findUnique as any) = async () => ({ platform_share: 1000 });
     (prisma.$transaction as any) = async (cb: any) => {
       return cb({
+        school: {
+          findUnique: async () => ({ platform_share: 1000 }),
+        },
         studentTermStatus: {
           upsert: async () => ({}),
+          updateMany: async () => ({ count: 1 }),
         },
-        paymentBatch: {
-          create: async () => ({ id: "batch-new", students_count: 2, status: "PENDING" }),
+        shareLedgerEntry: {
+          create: async () => ({ id: "ledger-new" }),
         },
         auditLog: {
           create: async () => ({}),
@@ -166,7 +170,6 @@ describe("Payment Tracking & PIN Gating System", () => {
         body: {
           termId: "term-1",
           studentIds: ["stud-1", "stud-2"],
-          createBatch: true,
         },
       });
       const res = await markPayments(req);
@@ -174,7 +177,6 @@ describe("Payment Tracking & PIN Gating System", () => {
       const data = await res.json();
       assert.strictEqual(data.success, true);
       assert.strictEqual(data.updated_count, 2);
-      assert.strictEqual(data.batch.id, "batch-new");
     } finally {
       prisma.term.findUnique = origTerm;
       prisma.student.findMany = origStudents;
@@ -213,9 +215,10 @@ describe("Payment Tracking & PIN Gating System", () => {
     }
   });
 
-  test("5b. POST /api/staff/payments rejects creating batch with students who are already paid", async () => {
+  test("5b. POST /api/staff/payments is idempotent when marking already paid students", async () => {
     const origTerm = prisma.term.findUnique;
     const origStudents = prisma.student.findMany;
+    const origTx = prisma.$transaction;
 
     (prisma.term.findUnique as any) = async () => ({ id: "term-1", school_id: "school-1" });
     (prisma.student.findMany as any) = async () => [
@@ -227,6 +230,24 @@ describe("Payment Tracking & PIN Gating System", () => {
       },
     ];
 
+    (prisma.$transaction as any) = async (cb: any) => {
+      return cb({
+        school: {
+          findUnique: async () => ({ platform_share: 1000 }),
+        },
+        studentTermStatus: {
+          upsert: async () => ({}),
+          updateMany: async () => ({ count: 0 }), // already paid
+        },
+        shareLedgerEntry: {
+          create: async () => ({ id: "ledger-new" }),
+        },
+        auditLog: {
+          create: async () => ({}),
+        },
+      });
+    };
+
     try {
       const adminToken = await tokenFor("school_admin", "school-1");
       const req = createMockReq("http://localhost/api/staff/payments", {
@@ -235,17 +256,17 @@ describe("Payment Tracking & PIN Gating System", () => {
         body: {
           termId: "term-1",
           studentIds: ["stud-1"],
-          createBatch: true,
         },
       });
       const res = await markPayments(req);
-      assert.strictEqual(res.status, 409);
+      assert.strictEqual(res.status, 200);
       const data = await res.json();
-      assert.match(data.error, /already been marked as paid/);
-      assert.deepStrictEqual(data.already_paid, ["stud-1"]);
+      assert.strictEqual(data.newly_paid_count, 0);
+      assert.strictEqual(data.already_paid_count, 1);
     } finally {
       prisma.term.findUnique = origTerm;
       prisma.student.findMany = origStudents;
+      prisma.$transaction = origTx;
     }
   });
 
@@ -330,15 +351,37 @@ describe("Payment Tracking & PIN Gating System", () => {
     }
   });
 
-  test("8. PIN GATING: POST /api/staff/pins/generate FAILS (403) when no confirmed payment batch exists", async () => {
+  test("8. PIN GATING: POST /api/staff/pins/generate succeeds without payment batch when fees are paid", async () => {
     const origTerm = prisma.term.findUnique;
     const origSchool = prisma.school.findUnique;
-    const origBatch = prisma.paymentBatch.findFirst;
+    const origStudents = prisma.student.findMany;
+    const origTx = prisma.$transaction;
 
-    (prisma.term.findUnique as any) = async () => ({ id: "term-1", school_id: "school-1" });
+    (prisma.term.findUnique as any) = async () => ({ id: "term-1", school_id: "school-1", session: "2026/2027", term_number: 1 });
     (prisma.school.findUnique as any) = async () => ({ id: "school-1", name: "Grace High", slug: "grace-high" });
-    // No confirmed batch!
-    (prisma.paymentBatch.findFirst as any) = async () => null;
+    (prisma.student.findMany as any) = async () => [
+      {
+        id: "stud-1",
+        admission_number: "ADM001",
+        full_name: "Alice",
+        termStatuses: [{ fees_paid: true, result_locked: false }],
+      },
+    ];
+
+    let createdPin = false;
+    (prisma.$transaction as any) = async (cb: any) => {
+      return cb({
+        term: { findMany: async () => [] },
+        pin: {
+          updateMany: async () => ({ count: 0 }),
+          create: async () => {
+            createdPin = true;
+            return { id: "pin-1" };
+          },
+        },
+        auditLog: { create: async () => ({}) },
+      });
+    };
 
     try {
       const adminToken = await tokenFor("school_admin", "school-1");
@@ -351,13 +394,15 @@ describe("Payment Tracking & PIN Gating System", () => {
         },
       });
       const res = await generatePins(req);
-      assert.strictEqual(res.status, 403);
+      assert.strictEqual(res.status, 200);
       const data = await res.json();
-      assert.match(data.error, /impossible without a confirmed payment batch/);
+      assert.strictEqual(data.success, true);
+      assert.ok(createdPin);
     } finally {
       prisma.term.findUnique = origTerm;
       prisma.school.findUnique = origSchool;
-      prisma.paymentBatch.findFirst = origBatch;
+      prisma.student.findMany = origStudents;
+      prisma.$transaction = origTx;
     }
   });
 

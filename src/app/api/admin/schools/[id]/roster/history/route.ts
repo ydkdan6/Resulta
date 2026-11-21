@@ -36,6 +36,9 @@ export async function GET(
         unchanged_count: true,
         error_count: true,
         total_count: true,
+        active_student_count: true,
+        expected_total: true,
+        expected_share: true,
         created_at: true,
         user: {
           select: {

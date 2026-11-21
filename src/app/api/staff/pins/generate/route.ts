@@ -58,27 +58,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'School not found.' }, { status: 404 });
     }
 
-    // 3. CRITICAL GATE: Verify there is a CONFIRMED PaymentBatch for this school and term
-    const confirmedBatch = await prisma.paymentBatch.findFirst({
-      where: {
-        school_id,
-        term_id: termId,
-        status: 'CONFIRMED',
-        ...(batchId ? { id: batchId } : {}),
-      },
-    });
-
-    if (!confirmedBatch) {
-      return NextResponse.json(
-        {
-          error:
-            'PIN generation is impossible without a confirmed payment batch. The platform administrator must confirm payment received first.',
-        },
-        { status: 403 }
-      );
-    }
-
-    // 4. Resolve target students
+    // 3. Resolve target students
     let targetStudentIds: string[] = [];
     if (Array.isArray(studentIds) && studentIds.length > 0) {
       targetStudentIds = studentIds;
@@ -257,7 +237,7 @@ export async function POST(request: NextRequest) {
           new_values: {
             count: generatedPins.length,
             term_id: termId,
-            batch_id: confirmedBatch.id,
+            batch_id: batchId ?? null,
             // Do NOT log plain_pin
           },
         },

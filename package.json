@@ -14,7 +14,7 @@
     "db:push": "node --import tsx scripts/assert-dev-db.ts && npx prisma db push",
     "db:backup": "node --import tsx scripts/backup.ts",
     "test:load": "node --import tsx --test tests/load-performance.test.ts",
-    "test": "node --import tsx --test --test-concurrency=1 tests/config.test.ts tests/pin.test.ts tests/security.test.ts tests/unit/grading.test.ts tests/grading-scheme.test.ts tests/unit/roster-parser.test.ts tests/admin-roster.test.ts tests/staff-roster.test.ts tests/teacher-scores.test.ts tests/payment.test.ts tests/parent-portal.test.ts tests/cross-school-access.test.ts tests/teacher-scope.test.ts tests/pin-rules.test.ts tests/payment-gated-pin.test.ts tests/rate-limiting.test.ts tests/data-protection.test.ts tests/load-performance.test.ts"
+    "test": "node --import tsx --test --test-concurrency=1 tests/config.test.ts tests/pin.test.ts tests/security.test.ts tests/unit/grading.test.ts tests/grading-scheme.test.ts tests/unit/roster-parser.test.ts tests/admin-roster.test.ts tests/staff-roster.test.ts tests/teacher-scores.test.ts tests/payment.test.ts tests/parent-portal.test.ts tests/cross-school-access.test.ts tests/teacher-scope.test.ts tests/pin-rules.test.ts tests/payment-gated-pin.test.ts tests/rate-limiting.test.ts tests/data-protection.test.ts tests/share-ledger.test.ts tests/load-performance.test.ts"
   },
   "prisma": {
     "seed": "node --import tsx prisma/seed.ts"
@@ -33,6 +33,7 @@
     "pdfkit": "^0.20.2",
     "react": "19.3.0",
     "react-dom": "19.3.0",
+    "recharts": "^3.11.0",
     "sharp": "^0.35.5",
     "zod": "^4.6.7"
   },

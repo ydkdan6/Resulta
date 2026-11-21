@@ -21,6 +21,7 @@ import {
   RefreshCw
 } from "lucide-react";
 import RosterManager from "./RosterManager";
+import SharesTabClient from "./SharesTabClient";
 import AuditLogViewer from "@/components/AuditLogViewer";
 
 interface SchoolData {
@@ -102,66 +103,9 @@ export default function AdminDashboardClient({
   initialBatches = [],
 }: Props) {
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<"schools" | "create-school" | "create-admin" | "create-teacher" | "assign-teacher" | "grading-schemes" | "student-roster" | "payment-batches" | "audit-logs">("schools");
+  const [activeTab, setActiveTab] = useState<"schools" | "create-school" | "create-admin" | "create-teacher" | "assign-teacher" | "grading-schemes" | "student-roster" | "payments-and-shares" | "audit-logs">("schools");
 
-  // Payment Batches states
-  const [adminBatches, setAdminBatches] = useState<AdminBatchData[]>(initialBatches);
-  const [loadingBatches, setLoadingBatches] = useState(false);
-  const [confirmingBatchId, setConfirmingBatchId] = useState<string | null>(null);
-  const [lastBatchesUpdated, setLastBatchesUpdated] = useState<string | null>(null);
 
-  const loadAdminBatches = useCallback(async () => {
-    try {
-      setLoadingBatches(true);
-      const res = await fetch(`/api/admin/payment-batches?_t=${Date.now()}`, {
-        cache: "no-store",
-        headers: {
-          "Cache-Control": "no-cache",
-          Pragma: "no-cache",
-        },
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setAdminBatches(data.batches || []);
-        setLastBatchesUpdated(new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", second: "2-digit" }));
-      }
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setLoadingBatches(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (activeTab === "payment-batches") {
-      loadAdminBatches();
-      const interval = setInterval(() => {
-        loadAdminBatches();
-      }, 15000);
-      return () => clearInterval(interval);
-    }
-  }, [activeTab, loadAdminBatches]);
-
-  const handleConfirmBatch = async (batchId: string) => {
-    try {
-      setConfirmingBatchId(batchId);
-      const res = await fetch(`/api/admin/payment-batches/${batchId}/confirm`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setMessage({ type: "error", text: data.error || "Failed to confirm batch." });
-      } else {
-        setMessage({ type: "success", text: "Payment batch confirmed. PIN generation is now unlocked for students in this batch." });
-        await loadAdminBatches();
-      }
-    } catch (e: unknown) {
-      setMessage({ type: "error", text: (e as Error).message });
-    } finally {
-      setConfirmingBatchId(null);
-    }
-  };
 
   // Grading Scheme states
   const [selectedSchoolForScheme, setSelectedSchoolForScheme] = useState<string>("");
@@ -595,22 +539,16 @@ export default function AdminDashboardClient({
             </button>
             <button
               onClick={() => {
-                setActiveTab("payment-batches");
+                setActiveTab("payments-and-shares");
                 setMessage(null);
-                loadAdminBatches();
               }}
               className={`px-4 py-2.5 text-xs font-mono font-medium transition-all active:scale-95 border-b-2 cursor-pointer flex items-center gap-1.5 ${
-                activeTab === "payment-batches"
+                activeTab === "payments-and-shares"
                   ? "border-[#671B24] text-[#671B24]"
                   : "border-transparent text-[#6B645D] hover:text-[#2C2825]"
               }`}
             >
-              <span>Payment Batches</span>
-              {adminBatches.filter((b) => b.status === "PENDING").length > 0 && (
-                <span className="px-1.5 py-0.2 bg-[#91660A] text-white text-[10px] font-bold rounded-full">
-                  {adminBatches.filter((b) => b.status === "PENDING").length}
-                </span>
-              )}
+              <span>Payments & Shares</span>
             </button>
             <button
               onClick={() => {
@@ -1492,119 +1430,9 @@ export default function AdminDashboardClient({
           <RosterManager schools={initialSchools} />
         )}
 
-        {/* TAB 8: Payment Batches */}
-        {activeTab === "payment-batches" && (
-          <div className="bg-[#FFFFFF] border border-[#E9E4D9] rounded-sm p-6 space-y-6">
-            <div className="flex items-center justify-between border-b border-[#E9E4D9] pb-4">
-              <div>
-                <h3 className="text-lg font-serif text-[#2C2825]">School Payment Batches</h3>
-                <p className="text-xs font-mono text-[#6B645D] mt-1">
-                  Record payments received from schools and confirm batches to approve PIN generation.
-                </p>
-              </div>
-              <div className="flex items-center gap-3">
-                {lastBatchesUpdated && (
-                  <span className="text-[11px] font-mono text-[#6B645D]">
-                    Updated at {lastBatchesUpdated}
-                  </span>
-                )}
-                <button
-                  type="button"
-                  onClick={loadAdminBatches}
-                  disabled={loadingBatches}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#FAF8F3] hover:bg-[#F0ECE1] active:scale-95 active:bg-[#E5DFD0] border border-[#D1CCC2] text-xs font-mono text-[#2C2825] rounded-sm transition-all cursor-pointer shadow-xs disabled:opacity-50"
-                >
-                  <RefreshCw className={`w-3.5 h-3.5 ${loadingBatches ? "animate-spin text-[#671B24]" : ""}`} />
-                  {loadingBatches ? "Refreshing..." : "Refresh Batches"}
-                </button>
-              </div>
-            </div>
-
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs font-mono">
-                <thead className="bg-[#FAF8F3] border-b border-[#E9E4D9] text-[#6B645D]">
-                  <tr>
-                    <th className="py-2.5 px-3">Date</th>
-                    <th className="py-2.5 px-3">School</th>
-                    <th className="py-2.5 px-3">Term</th>
-                    <th className="py-2.5 px-3">Students</th>
-                    <th className="py-2.5 px-3">Amount Due</th>
-                    <th className="py-2.5 px-3">Status</th>
-                    <th className="py-2.5 px-3 text-right">Action</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[#E9E4D9]">
-                  {adminBatches.length === 0 ? (
-                    <tr>
-                      <td colSpan={7} className="py-8 text-center text-[#6B645D]">
-                        {loadingBatches ? "Loading payment batches..." : "No payment batches found."}
-                      </td>
-                    </tr>
-                  ) : (
-                    adminBatches.map((b) => (
-                      <tr key={b.id} className="hover:bg-[#FAF8F3]">
-                        <td className="py-2.5 px-3 text-[#6B645D]">
-                          {(() => {
-                            try {
-                              const d = new Date(b.created_at);
-                              return isNaN(d.getTime()) ? "—" : d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
-                            } catch {
-                              return "—";
-                            }
-                          })()}
-                        </td>
-                        <td className="py-2.5 px-3 font-semibold text-[#2C2825]">
-                          {b.school.name}
-                        </td>
-                        <td className="py-2.5 px-3 text-[#6B645D]">
-                          Term {b.term.term_number} ({b.term.session})
-                        </td>
-                        <td className="py-2.5 px-3 font-semibold text-[#2C2825]">
-                          {b.students_count}
-                        </td>
-                        <td className="py-2.5 px-3 font-semibold text-[#2C2825]">
-                          ₦{Number(b.amount_due).toLocaleString()}
-                        </td>
-                        <td className="py-2.5 px-3">
-                          {b.status === "CONFIRMED" ? (
-                            <span className="inline-flex items-center gap-1 text-[#3F4E40] font-medium bg-[#F2F6F3] px-2 py-0.5 rounded-sm border border-[#BACBBF]">
-                              Confirmed
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1 text-[#91660A] font-medium bg-[#FFF8E7] px-2 py-0.5 rounded-sm border border-[#F0D59A]">
-                              Pending Review
-                            </span>
-                          )}
-                        </td>
-                        <td className="py-2.5 px-3 text-right">
-                          {b.status === "PENDING" ? (
-                            <button
-                              type="button"
-                              disabled={confirmingBatchId === b.id}
-                              onClick={() => handleConfirmBatch(b.id)}
-                              className="px-3.5 py-1.5 bg-[#3F4E40] hover:bg-[#2E3A2F] active:scale-95 active:bg-[#1E271F] text-white text-[11px] font-mono font-medium rounded-sm shadow-xs transition-all cursor-pointer disabled:opacity-40"
-                            >
-                              {confirmingBatchId === b.id ? (
-                                <span className="inline-flex items-center gap-1">
-                                  <RefreshCw className="w-3 h-3 animate-spin" /> Confirming...
-                                </span>
-                              ) : (
-                                "Confirm Payment"
-                              )}
-                            </button>
-                          ) : (
-                            <span className="text-[11px] text-[#6B645D]">
-                              Confirmed by {b.confirmer?.name || "Admin"}
-                            </span>
-                          )}
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
+        {/* TAB 8: Payments & Shares */}
+        {activeTab === "payments-and-shares" && (
+          <SharesTabClient schools={initialSchools} />
         )}
 
         {activeTab === "audit-logs" && (

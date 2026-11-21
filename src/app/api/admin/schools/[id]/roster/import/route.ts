@@ -1,5 +1,6 @@
 // src/app/api/admin/schools/[id]/roster/import/route.ts
 import { NextRequest, NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requireAuth, AuthError } from "@/lib/auth/scope";
 import {
@@ -258,7 +259,29 @@ export async function POST(
           }
         }
 
-        // 5. Record Import History (no student names logged)
+        // 5. Calculate active students and financial snapshot
+        const activeCount =
+          typeof (tx as any).student?.count === "function"
+            ? await tx.student.count({
+                where: { school_id: schoolId, status: "ACTIVE" },
+              })
+            : (school.students?.length ?? validRows.length);
+
+        const schoolPricing =
+          typeof (tx as any).school?.findUnique === "function"
+            ? await tx.school.findUnique({
+                where: { id: schoolId },
+                select: { card_price: true, platform_share: true },
+              })
+            : null;
+
+        const cardPrice = schoolPricing?.card_price ?? (school as any).card_price ?? new Prisma.Decimal(2000.0);
+        const platformShare = schoolPricing?.platform_share ?? (school as any).platform_share ?? new Prisma.Decimal(1000.0);
+        const expectedTotal = cardPrice.mul(activeCount);
+        const expectedShare = platformShare.mul(activeCount);
+        const schoolShare = expectedTotal.sub(expectedShare);
+
+        // 6. Record Import History (no student names logged)
         const importRecord = await (tx as any).studentImport?.create?.({
           data: {
             school_id: schoolId,
@@ -269,10 +292,13 @@ export async function POST(
             unchanged_count: unchangedImported,
             error_count: validation.errorCount,
             total_count: validRows.length,
+            active_student_count: activeCount,
+            expected_total: expectedTotal,
+            expected_share: expectedShare,
           },
         });
 
-        // 6. Audit Log (no student names logged)
+        // 7. Audit Log (no student names logged)
         await tx.auditLog.create({
           data: {
             school_id: schoolId,
@@ -286,6 +312,9 @@ export async function POST(
               unchangedImported,
               flaggedNotInUploadCount,
               isCompleteList,
+              active_student_count: activeCount,
+              expected_total: expectedTotal.toNumber(),
+              expected_share: expectedShare.toNumber(),
             },
           },
         });
@@ -298,6 +327,10 @@ export async function POST(
           errorCount: validation.errorCount,
           flaggedNotInUploadCount,
           importId: importRecord?.id || null,
+          active_student_count: activeCount,
+          expected_total: expectedTotal.toNumber(),
+          expected_share: expectedShare.toNumber(),
+          school_share: schoolShare.toNumber(),
         };
       },
       {

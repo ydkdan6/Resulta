@@ -67,6 +67,9 @@ interface ImportHistoryRecord {
   unchanged_count: number;
   error_count: number;
   total_count: number;
+  active_student_count?: number | null;
+  expected_total?: number | string | null;
+  expected_share?: number | string | null;
   created_at: string;
   user: {
     name: string;
@@ -281,11 +284,13 @@ export default function RosterManager({ schools }: Props) {
       }
 
       // Success
-      const summaryMsg = `Import completed successfully: ${data.newImported} new students created, ${data.updatedImported} updated, ${data.unchangedImported} unchanged.${
-        data.flaggedNotInUploadCount > 0
-          ? ` ${data.flaggedNotInUploadCount} unlisted students flagged as not in latest upload.`
-          : ""
-      }`;
+      let summaryMsg = `Import completed successfully: ${data.newImported} new students created, ${data.updatedImported} updated, ${data.unchangedImported} unchanged.`;
+      if (data.active_student_count !== undefined && data.active_student_count !== null) {
+        summaryMsg += ` (${data.active_student_count} active students, total card amount ₦${Number(data.expected_total || 0).toLocaleString()}, your expected share ₦${Number(data.expected_share || 0).toLocaleString()}, school share ₦${Number(data.school_share || 0).toLocaleString()})`;
+      }
+      if (data.flaggedNotInUploadCount > 0) {
+        summaryMsg += ` ${data.flaggedNotInUploadCount} unlisted students flagged as not in latest upload.`;
+      }
       setImportSuccess(summaryMsg);
 
       // Clear preview and selected file so it cannot be imported twice
@@ -915,50 +920,75 @@ export default function RosterManager({ schools }: Props) {
                   <th className="py-2.5 px-4 font-medium text-center">Unchanged</th>
                   <th className="py-2.5 px-4 font-medium text-center">Errors</th>
                   <th className="py-2.5 px-4 font-medium text-right">Total</th>
+                  <th className="py-2.5 px-4 font-medium text-center">Active</th>
+                  <th className="py-2.5 px-4 font-medium text-right">Card Total</th>
+                  <th className="py-2.5 px-4 font-medium text-right">Expected Share</th>
+                  <th className="py-2.5 px-4 font-medium text-right">School Share</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#F4F0E6]">
                 {loadingHistory ? (
                   <tr>
-                    <td colSpan={8} className="py-8 text-center text-xs font-mono text-[#6B645D]">
+                    <td colSpan={12} className="py-8 text-center text-xs font-mono text-[#6B645D]">
                       Loading import history...
                     </td>
                   </tr>
                 ) : historyList.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="py-8 text-center text-xs font-mono text-[#6B645D]">
+                    <td colSpan={12} className="py-8 text-center text-xs font-mono text-[#6B645D]">
                       No previous roster imports recorded for this school.
                     </td>
                   </tr>
                 ) : (
-                  historyList.map((h) => (
-                    <tr key={h.id} className="hover:bg-[#FAF8F3]">
-                      <td className="py-2.5 px-4 font-mono text-[#6B645D] whitespace-nowrap">
-                        {formatRosterDate(h.created_at)}
-                      </td>
-                      <td className="py-2.5 px-4 font-mono font-medium text-[#2C2825]">
-                        {h.file_name}
-                      </td>
-                      <td className="py-2.5 px-4 text-[#47423D]">
-                        {h.user ? `${h.user.name} (${h.user.email})` : "System / Platform Admin"}
-                      </td>
-                      <td className="py-2.5 px-4 text-center font-mono text-[#3F4E40] font-medium">
-                        +{h.new_count}
-                      </td>
-                      <td className="py-2.5 px-4 text-center font-mono text-[#2B4C7E]">
-                        {h.updated_count}
-                      </td>
-                      <td className="py-2.5 px-4 text-center font-mono text-[#6B645D]">
-                        {h.unchanged_count}
-                      </td>
-                      <td className="py-2.5 px-4 text-center font-mono text-[#671B24]">
-                        {h.error_count}
-                      </td>
-                      <td className="py-2.5 px-4 text-right font-mono font-semibold text-[#2C2825]">
-                        {h.total_count}
-                      </td>
-                    </tr>
-                  ))
+                  historyList.map((h) => {
+                    const expectedTotalNum = h.expected_total != null ? Number(h.expected_total) : null;
+                    const expectedShareNum = h.expected_share != null ? Number(h.expected_share) : null;
+                    const schoolShareNum =
+                      expectedTotalNum != null && expectedShareNum != null
+                        ? expectedTotalNum - expectedShareNum
+                        : null;
+
+                    return (
+                      <tr key={h.id} className="hover:bg-[#FAF8F3]">
+                        <td className="py-2.5 px-4 font-mono text-[#6B645D] whitespace-nowrap">
+                          {formatRosterDate(h.created_at)}
+                        </td>
+                        <td className="py-2.5 px-4 font-mono font-medium text-[#2C2825]">
+                          {h.file_name}
+                        </td>
+                        <td className="py-2.5 px-4 text-[#47423D]">
+                          {h.user ? `${h.user.name} (${h.user.email})` : "System / Platform Admin"}
+                        </td>
+                        <td className="py-2.5 px-4 text-center font-mono text-[#3F4E40] font-medium">
+                          +{h.new_count}
+                        </td>
+                        <td className="py-2.5 px-4 text-center font-mono text-[#2B4C7E]">
+                          {h.updated_count}
+                        </td>
+                        <td className="py-2.5 px-4 text-center font-mono text-[#6B645D]">
+                          {h.unchanged_count}
+                        </td>
+                        <td className="py-2.5 px-4 text-center font-mono text-[#671B24]">
+                          {h.error_count}
+                        </td>
+                        <td className="py-2.5 px-4 text-right font-mono font-semibold text-[#2C2825]">
+                          {h.total_count}
+                        </td>
+                        <td className="py-2.5 px-4 text-center font-mono text-[#2C2825]">
+                          {h.active_student_count != null ? h.active_student_count : "—"}
+                        </td>
+                        <td className="py-2.5 px-4 text-right font-mono text-[#2C2825]">
+                          {expectedTotalNum != null ? `₦${expectedTotalNum.toLocaleString()}` : "—"}
+                        </td>
+                        <td className="py-2.5 px-4 text-right font-mono text-[#3F4E40] font-medium">
+                          {expectedShareNum != null ? `₦${expectedShareNum.toLocaleString()}` : "—"}
+                        </td>
+                        <td className="py-2.5 px-4 text-right font-mono text-[#2B4C7E]">
+                          {schoolShareNum != null ? `₦${schoolShareNum.toLocaleString()}` : "—"}
+                        </td>
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
             </table>

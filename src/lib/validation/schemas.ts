@@ -129,9 +129,27 @@ export const MarkPaymentsSchema = z.object({
   studentIds: z
     .array(z.string().min(1))
     .min(1, 'termId and a non-empty studentIds array are required.'),
-  createBatch: z.boolean().optional(),
 });
 export type MarkPaymentsInput = z.infer<typeof MarkPaymentsSchema>;
+
+export const UnmarkPaymentsSchema = z.object({
+  termId: z.string().min(1, 'termId and a non-empty studentIds array are required.'),
+  studentIds: z
+    .array(z.string().min(1))
+    .min(1, 'termId and a non-empty studentIds array are required.'),
+  reason: z.string().trim().optional(),
+});
+export type UnmarkPaymentsInput = z.infer<typeof UnmarkPaymentsSchema>;
+
+export const SettlementSchema = z.object({
+  schoolId: z.string().min(1, 'schoolId is required.'),
+  termId: z.string().min(1, 'termId is required.').optional(),
+  amount: z.number({ error: 'amount must be a number.' }),
+  date: z.string().min(1, 'date is required.'),
+  reference: z.string().trim().optional(),
+  note: z.string().trim().optional(),
+});
+export type SettlementInput = z.infer<typeof SettlementSchema>;
 
 export const WithholdResultSchema = z.object({
   studentId: z.string().min(1, 'studentId, termId, and withheld (boolean) are required.'),

@@ -43,10 +43,11 @@ async function tokenFor(
 }
 
 describe('Payment-Gated PIN Generation & Reprint Lifecycle Tests', () => {
-  test('1. Fails with 403 when no payment batch exists for this term', async () => {
+  test('1. PIN generation does not require a payment batch (batch gating removed)', async () => {
     const origTerm = prisma.term.findUnique;
     const origSchool = prisma.school.findUnique;
-    const origBatch = prisma.paymentBatch.findFirst;
+    const origStudents = prisma.student.findMany;
+    const origTx = prisma.$transaction;
 
     (prisma.term.findUnique as any) = async () => ({
       id: 'term-1',
@@ -58,48 +59,33 @@ describe('Payment-Gated PIN Generation & Reprint Lifecycle Tests', () => {
       id: 'school-1',
       name: 'Grace High',
       slug: 'grace-high',
+      logo_url: null,
     });
-    // No batch found
-    (prisma.paymentBatch.findFirst as any) = async () => null;
+    (prisma.student.findMany as any) = async () => [
+      {
+        id: 'student-1',
+        admission_number: 'ADM-001',
+        full_name: 'Paid Student',
+        status: 'ACTIVE',
+        class: { id: 'c-1', name: 'JSS 1' },
+        termStatuses: [{ fees_paid: true, result_locked: false }],
+      },
+    ];
 
-    try {
-      const token = await tokenFor('school_admin', 'school-1');
-      const req = createMockReq('http://localhost/api/staff/pins/generate', {
-        token,
-        method: 'POST',
-        body: { termId: 'term-1' },
-      });
-      const res = await generatePins(req);
-      assert.strictEqual(res.status, 403);
-      const data = await res.json();
-      assert.match(data.error, /confirmed payment batch/i);
-    } finally {
-      prisma.term.findUnique = origTerm;
-      prisma.school.findUnique = origSchool;
-      prisma.paymentBatch.findFirst = origBatch;
-    }
-  });
-
-  test('2. Fails with 403 when payment batch is in PENDING status (not yet confirmed)', async () => {
-    const origTerm = prisma.term.findUnique;
-    const origSchool = prisma.school.findUnique;
-    const origBatch = prisma.paymentBatch.findFirst;
-
-    (prisma.term.findUnique as any) = async () => ({
-      id: 'term-1',
-      school_id: 'school-1',
-      session: '2026/2027',
-      term_number: 1,
-    });
-    (prisma.school.findUnique as any) = async () => ({
-      id: 'school-1',
-      name: 'Grace High',
-      slug: 'grace-high',
-    });
-    // Batch is pending, not confirmed (where: { status: 'CONFIRMED' } will find null)
-    (prisma.paymentBatch.findFirst as any) = async ({ where }: any) => {
-      if (where.status === 'CONFIRMED') return null;
-      return { id: 'batch-pending', status: 'PENDING' };
+    let createdPin: any = null;
+    (prisma.$transaction as any) = async (cb: any) => {
+      const mockTx = {
+        term: { findMany: async () => [] },
+        pin: {
+          updateMany: async () => ({ count: 0 }),
+          create: async ({ data }: any) => {
+            createdPin = data;
+            return { id: 'pin-1', ...data };
+          },
+        },
+        auditLog: { create: async () => ({}) },
+      };
+      return cb(mockTx);
     };
 
     try {
@@ -107,16 +93,54 @@ describe('Payment-Gated PIN Generation & Reprint Lifecycle Tests', () => {
       const req = createMockReq('http://localhost/api/staff/pins/generate', {
         token,
         method: 'POST',
-        body: { termId: 'term-1' },
+        body: { termId: 'term-1', studentIds: ['student-1'] },
       });
       const res = await generatePins(req);
-      assert.strictEqual(res.status, 403);
+      assert.strictEqual(res.status, 200);
       const data = await res.json();
-      assert.match(data.error, /confirmed payment batch/i);
+      assert.strictEqual(data.generated_count, 1);
+      assert.ok(createdPin);
     } finally {
       prisma.term.findUnique = origTerm;
       prisma.school.findUnique = origSchool;
-      prisma.paymentBatch.findFirst = origBatch;
+      prisma.student.findMany = origStudents;
+      prisma.$transaction = origTx;
+    }
+  });
+
+  test('2. Fails with 400 when no paid students exist for term', async () => {
+    const origTerm = prisma.term.findUnique;
+    const origSchool = prisma.school.findUnique;
+    const origStatus = prisma.studentTermStatus.findMany;
+
+    (prisma.term.findUnique as any) = async () => ({
+      id: 'term-1',
+      school_id: 'school-1',
+      session: '2026/2027',
+      term_number: 1,
+    });
+    (prisma.school.findUnique as any) = async () => ({
+      id: 'school-1',
+      name: 'Grace High',
+      slug: 'grace-high',
+    });
+    (prisma.studentTermStatus.findMany as any) = async () => [];
+
+    try {
+      const token = await tokenFor('school_admin', 'school-1');
+      const req = createMockReq('http://localhost/api/staff/pins/generate', {
+        token,
+        method: 'POST',
+        body: { termId: 'term-1' },
+      });
+      const res = await generatePins(req);
+      assert.strictEqual(res.status, 400);
+      const data = await res.json();
+      assert.match(data.error, /No paid students found/i);
+    } finally {
+      prisma.term.findUnique = origTerm;
+      prisma.school.findUnique = origSchool;
+      prisma.studentTermStatus.findMany = origStatus;
     }
   });
 
