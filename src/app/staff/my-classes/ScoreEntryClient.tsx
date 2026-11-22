@@ -310,13 +310,24 @@ export default function ScoreEntryClient({
       setIsLocked(Boolean(data.isLocked));
       if (data.userRole) setUserRole(data.userRole);
 
-      // Check localStorage for any local draft for this assignment
       const draftStorageKey = `resulta_draft_${classId}_${subjectId}_${termId}`;
+
+      // Clear stale localStorage draft cache when scores are freshly fetched or unlocked
+      // so stale local edits do not override server-rendered scores
+      if (data.isLocked) {
+        try {
+          localStorage.removeItem(draftStorageKey);
+        } catch (e) {}
+      }
+
+      // Check localStorage for any local draft for this assignment (only if never submitted/locked)
       let localDraftMap: Record<string, Record<string, string>> = {};
       try {
-        const cached = localStorage.getItem(draftStorageKey);
-        if (cached) {
-          localDraftMap = JSON.parse(cached);
+        if (!data.isLocked) {
+          const cached = localStorage.getItem(draftStorageKey);
+          if (cached) {
+            localDraftMap = JSON.parse(cached);
+          }
         }
       } catch (e) {}
 
@@ -337,14 +348,15 @@ export default function ScoreEntryClient({
           const caParts = parts.filter((p: any) => !p.name.toLowerCase().includes("exam"));
 
           for (const p of parts) {
-            // First check local uncommitted draft (only if scores are not locked)
-            const localVal = !data.isLocked ? localStudentDraft?.[p.name] : undefined;
+            // First check local uncommitted draft only if no existing saved result on server
+            const localVal = !existing && !data.isLocked ? localStudentDraft?.[p.name] : undefined;
             if (localVal !== undefined && localVal !== null && localVal !== "") {
               scoresMap[p.name] = String(localVal);
             } else if (existing) {
               const isExam = p.name.toLowerCase().includes("exam");
               if (isExam) {
-                // If there's only 1 exam part, map the whole exam_score. If multiple, only map to the first part to prevent multiplying/summing.
+                // If there's only 1 exam part, map the whole exam_score.
+                // If multiple exam parts, only map to the first part if the other parts were not individually entered.
                 if (examParts.length === 1 || examParts[0].name === p.name) {
                   scoresMap[p.name] =
                     existing.exam_score !== null && existing.exam_score !== undefined
@@ -354,7 +366,8 @@ export default function ScoreEntryClient({
                   scoresMap[p.name] = "";
                 }
               } else {
-                // If there's only 1 CA part, map the whole ca_score. If multiple, only map to the first part to prevent multiplying/summing.
+                // If there's only 1 CA part, map the whole ca_score.
+                // If multiple CA parts, only map to the first part.
                 if (caParts.length === 1 || caParts[0].name === p.name) {
                   scoresMap[p.name] =
                     existing.ca_score !== null && existing.ca_score !== undefined
@@ -815,6 +828,10 @@ export default function ScoreEntryClient({
       setUnlockReason("");
       showToast("Scores Unlocked", data.message || "Scores unlocked successfully.", "success");
       setIsLocked(false);
+      // Remove any local draft caching for this assignment so the clean server results are loaded
+      try {
+        localStorage.removeItem(`resulta_draft_${selectedClassId}_${selectedSubjectId}_${selectedTermId}`);
+      } catch (e) {}
       await fetchScores(selectedClassId, selectedSubjectId, selectedTermId);
     } catch (err: any) {
       setErrorMessage(err.message || "Failed to unlock scores.");
