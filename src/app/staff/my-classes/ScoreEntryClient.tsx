@@ -332,22 +332,37 @@ export default function ScoreEntryClient({
         const localStudentDraft = localDraftMap[s.id] || localDraftMap[s.admission_number];
 
         if (data.scheme?.parts) {
-          for (const p of data.scheme.parts) {
-            // First check local uncommitted draft
-            const localVal = localStudentDraft?.[p.name];
+          const parts = data.scheme.parts;
+          const examParts = parts.filter((p: any) => p.name.toLowerCase().includes("exam"));
+          const caParts = parts.filter((p: any) => !p.name.toLowerCase().includes("exam"));
+
+          for (const p of parts) {
+            // First check local uncommitted draft (only if scores are not locked)
+            const localVal = !data.isLocked ? localStudentDraft?.[p.name] : undefined;
             if (localVal !== undefined && localVal !== null && localVal !== "") {
               scoresMap[p.name] = String(localVal);
             } else if (existing) {
-              if (p.name.toLowerCase().includes("exam")) {
-                scoresMap[p.name] =
-                  existing.exam_score !== null && existing.exam_score !== undefined
-                    ? String(Number(existing.exam_score))
-                    : "";
+              const isExam = p.name.toLowerCase().includes("exam");
+              if (isExam) {
+                // If there's only 1 exam part, map the whole exam_score. If multiple, only map to the first part to prevent multiplying/summing.
+                if (examParts.length === 1 || examParts[0].name === p.name) {
+                  scoresMap[p.name] =
+                    existing.exam_score !== null && existing.exam_score !== undefined
+                      ? String(Number(existing.exam_score))
+                      : "";
+                } else {
+                  scoresMap[p.name] = "";
+                }
               } else {
-                scoresMap[p.name] =
-                  existing.ca_score !== null && existing.ca_score !== undefined
-                    ? String(Number(existing.ca_score))
-                    : "";
+                // If there's only 1 CA part, map the whole ca_score. If multiple, only map to the first part to prevent multiplying/summing.
+                if (caParts.length === 1 || caParts[0].name === p.name) {
+                  scoresMap[p.name] =
+                    existing.ca_score !== null && existing.ca_score !== undefined
+                      ? String(Number(existing.ca_score))
+                      : "";
+                } else {
+                  scoresMap[p.name] = "";
+                }
               }
             } else {
               scoresMap[p.name] = "";

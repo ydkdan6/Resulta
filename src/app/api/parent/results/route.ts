@@ -65,17 +65,26 @@ export async function GET(request: NextRequest) {
     }
 
     // Terms accessible:
+    // Published terms, OR the exact term the parent authenticated with via active PIN (which may be currently underway/finalizing)
     const allPublishedTerms = await prisma.term.findMany({
       where: {
         school_id,
-        status: 'PUBLISHED',
+        OR: [
+          { status: 'PUBLISHED' },
+          { id: session.pin_term_id },
+        ],
       },
       orderBy: [{ session: 'desc' }, { term_number: 'desc' }],
     });
 
     const accessibleTerms = allPublishedTerms.filter((t) => {
-      if (t.session < pin_session) return true;
-      if (t.session === pin_session && t.term_number <= pin_term_number) return true;
+      // The authenticated PIN term is always allowed
+      if (t.id === session.pin_term_id) return true;
+      // Earlier published terms are allowed
+      if (t.status === 'PUBLISHED') {
+        if (t.session < pin_session) return true;
+        if (t.session === pin_session && t.term_number <= pin_term_number) return true;
+      }
       return false; // Later terms are never shown!
     });
 

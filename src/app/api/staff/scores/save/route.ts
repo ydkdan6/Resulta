@@ -143,6 +143,41 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // 8b. Fetch existing results before saving to support audit logging if edits are made after unlock
+    const existingResultsForAudit = await prisma.result.findMany({
+      where: {
+        school_id: session.school_id,
+        subject_id: subjectId,
+        term_id: termId,
+        student_id: { in: rowsToSave.map((r: any) => r.student_id) },
+      },
+      select: {
+        id: true,
+        student_id: true,
+        ca_score: true,
+        exam_score: true,
+        total: true,
+        status: true,
+      },
+    });
+
+    const existingResultsMap = new Map<string, (typeof existingResultsForAudit)[0]>();
+    for (const er of existingResultsForAudit) {
+      existingResultsMap.set(er.student_id, er);
+    }
+
+    const auditChanges: { student_id: string; old_total: number | null; new_total: number | null }[] = [];
+    for (const r of rowsToSave) {
+      const prev = existingResultsMap.get(r.student_id);
+      if (prev && (Number(prev.ca_score) !== Number(r.ca_score) || Number(prev.exam_score) !== Number(r.exam_score))) {
+        auditChanges.push({
+          student_id: r.student_id,
+          old_total: prev.total !== null ? Number(prev.total) : null,
+          new_total: r.total,
+        });
+      }
+    }
+
     // 9. Atomic database transaction to save draft results
     if (rowsToSave.length > 0) {
       await prisma.$transaction(
@@ -178,6 +213,21 @@ export async function POST(request: NextRequest) {
           })
         )
       );
+
+      // If changes occurred to previously existing records (such as after unlock), record audit log
+      if (auditChanges.length > 0) {
+        const { recordAuditLog } = await import("@/lib/audit");
+        await recordAuditLog({
+          schoolId: session.school_id,
+          userId: session.id,
+          action: "SCORE_EDIT_AFTER_UNLOCK",
+          entity: "Result",
+          entityId: `${classId}:${subjectId}:${termId}`,
+          reason: "Score edited and updated",
+          oldValues: { modified_count: auditChanges.length, sample: auditChanges.slice(0, 5) },
+          newValues: { updated_by: session.id, role: session.role },
+        });
+      }
     }
 
     return NextResponse.json({
